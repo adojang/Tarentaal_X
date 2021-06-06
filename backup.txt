@@ -93,47 +93,31 @@ String ptr;
 String str;
 String str3;
 BLEScan* pBLEScan; //ble pointer
-std::string addressReturn;
 
 /* BLE Function Code */
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     void onResult(BLEAdvertisedDevice advertisedDevice) {
-        Serial.println("Function For Loop Start...");
+
         for (int i = 0; i < (sizeof(knownBLEAddresses) / sizeof(knownBLEAddresses[i])); i++)
         {
             //Compare Each incoming signal with my code above and if it matches, set a flag that the key is within range.
             str = advertisedDevice.toString().c_str();
-           //pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
+            pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
             str3 = str.substring(pos + 9, pos + 26);
-            //Serial.println("In Loop...");
-             addressReturn = advertisedDevice.getAddress().toString();
 
-
-
-//TODO: Remove STR3 from everything. IT was from the past when I didn't know how to code.
-
-
-
-
-
-
-
-
-            if ((strcmp(addressReturn.c_str(), knownBLEAddresses[i].c_str()) == 0))
+            if ((strcmp(str3.c_str(), knownBLEAddresses[i].c_str()) == 0))
             {
-            //    Serial.println("Device MATCHES");
-             //    Serial.println("THERE IS A MATCHHHHHHHHHHHHHH\n");
-            //    Serial.println(str3.c_str());
-            //    Serial.println(knownBLEAddresses[i].c_str());
+                //Serial.println("Device MATCHES");
+                //Serial.println(str3.c_str());
+                //Serial.println(knownBLEAddresses[i].c_str());
                 device_found = true;                              //flag that is set that indicates I am within BLE range
             }
             else
             {
-             //   Serial.println("Device not found");
-            //    Serial.println("No Match")
-            //    Serial.println(str3.c_str());
-            //   Serial.println(knownBLEAddresses[i].c_str());
+                //Serial.println("Device DOES NOT MATCH");
+                //Serial.println(str3.c_str());
+                //Serial.println(knownBLEAddresses[i].c_str());
             }
             scannumber++;
         }
@@ -156,12 +140,11 @@ void setup() {
     pBLEScan->setActiveScan(true); //active scan uses more power, but get results faster
     pBLEScan->setInterval(interval); // set Scan interval // TRY 128
     pBLEScan->setWindow(window);  // less or equal setInterval value // TRY 16
-    Serial.println("Finish Initialize");
 
 }
 void loop() {
     currenttime = millis();
-    Serial.println("Program Loop Start");
+
     //Time keeping function
     if (currenttime - previoustime >= time_delay)
     {
@@ -172,7 +155,7 @@ void loop() {
     //Config flag function
     if (configcounter >= 2)
     {
-        Serial.println("Disable BLE\n");
+        Serial.println("Disable BLE");
     configcounter = 0;
     config_ble = true;
     wifibool = false;
@@ -182,19 +165,9 @@ void loop() {
     if (!config_ble)
     {
         //BLE Functionality
-        Serial.println("BLE Loop Start");
-
-        //BLESCANRESULTS is where the problem of all this shenanigains lie.
-
         BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-        Serial.println("BLE End Scanresults\n");
-        Serial.println(foundDevices.getCount());
-        pBLEScan->clearResults();
-        
-
         for (k = 0; k < foundDevices.getCount(); k++)
         {
-            Serial.printf("Loop of FoundDevices: %d\n", k);
             BLEAdvertisedDevice device = foundDevices.getDevice(k);
             rssi = device.getRSSI();
             if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0)
@@ -222,7 +195,6 @@ void loop() {
                     //Optional: Rollover data from old array to the new one.
                     dataCounter =0;
                 }
-                Serial.println("End of BLE Inner IF");
             }
 
             if ((rssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
