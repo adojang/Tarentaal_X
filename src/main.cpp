@@ -17,6 +17,7 @@
  *  - Multiple users, profiles, use EEPROM, remember who's in and out etc. etc.
  *  - Build a watchdog that will reset the ESP if something goes terribly wrong.
  * 
+ * 
  */
 
 #include <WiFi.h>
@@ -41,12 +42,11 @@ void handle_toggleGate();
 void handle_exitconfig();
 void handle_NotFound();
 String SendHTML(uint8_t active);
-String refreshpageHTML ();
+String refreshpageHTML();
 
-
- /* Put your SSID & Password */
-const char* ssid = "Tarentaal";  // Enter SSID here
-const char* password = "birdsfordays";  //Enter Password here
+/* Put your SSID & Password */
+const char *ssid = "Tarentaal";        // Enter SSID here
+const char *password = "birdsfordays"; //Enter Password here
 
 /* Put IP Address details */
 IPAddress local_ip(192, 168, 1, 25);
@@ -58,10 +58,10 @@ WebServer server(80);
 String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
 
 /* Constants */
-int RSSI_THRESHOLD = -88;   // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
-int RSSI_CONFIG = -50;      // For starting the Webserver
-uint8_t RSSI_CUSTOM_IN = 88;   //The EEPROM value will overwrite this.
-uint8_t RSSI_CUSTOM_OUT = 88;  //The EEPROM value will overwrite this.
+int RSSI_THRESHOLD = -88;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
+int RSSI_CONFIG = -50;        // For starting the Webserver
+uint8_t RSSI_CUSTOM_IN = 88;  //The EEPROM value will overwrite this.
+uint8_t RSSI_CUSTOM_OUT = 88; //The EEPROM value will overwrite this.
 
 bool device_found = false;
 bool wifibool = false;
@@ -69,9 +69,9 @@ bool config_ble = false;
 bool gate_delay = true; // Set as true so we don't need to wait for timedelay on first boot. Gate is primed after restart.
 
 uint8_t LED_BUILTIN = 2;
-uint32_t scanTime = 2; //Duration of each scan in seconds
+uint32_t scanTime = 2;    //Duration of each scan in seconds
 uint16_t interval = 1100; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 1099; //the window of time after each interval which is being scanned in milliseconds
+uint16_t window = 1099;   //the window of time after each interval which is being scanned in milliseconds
 uint16_t configcounter = 0;
 double distance = 0;
 double temp;
@@ -82,7 +82,7 @@ unsigned long currenttime;
 int pos = 0;
 int scannumber = 0;
 int i = 0;
-int dataCounter =0;
+int dataCounter = 0;
 int incomingData[50] = {0};
 int k;
 int prev = 0;
@@ -92,48 +92,40 @@ int keyrssi = -111;
 String ptr;
 String str;
 String str3;
-BLEScan* pBLEScan; //ble pointer
+BLEScan *pBLEScan; //ble pointer
 std::string addressReturn;
 
 /* BLE Function Code */
 
-class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
-    void onResult(BLEAdvertisedDevice advertisedDevice) {
-        Serial.println("Function For Loop Start...");
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
+{
+    void onResult(BLEAdvertisedDevice advertisedDevice)
+    {
+       // Serial.println("Function For Loop Start...");
         for (int i = 0; i < (sizeof(knownBLEAddresses) / sizeof(knownBLEAddresses[i])); i++)
         {
             //Compare Each incoming signal with my code above and if it matches, set a flag that the key is within range.
             str = advertisedDevice.toString().c_str();
-           //pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
-            str3 = str.substring(pos + 9, pos + 26);
+            //pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
+            //This was when I was still analyzing hte whole string and doing needless work...
+            //str3 = str.substring(pos + 9, pos + 26);
             //Serial.println("In Loop...");
-             addressReturn = advertisedDevice.getAddress().toString();
-
-
-
-//TODO: Remove STR3 from everything. IT was from the past when I didn't know how to code.
-
-
-
-
-
-
-
+            addressReturn = advertisedDevice.getAddress().toString();
 
             if ((strcmp(addressReturn.c_str(), knownBLEAddresses[i].c_str()) == 0))
             {
-            //    Serial.println("Device MATCHES");
-             //    Serial.println("THERE IS A MATCHHHHHHHHHHHHHH\n");
-            //    Serial.println(str3.c_str());
-            //    Serial.println(knownBLEAddresses[i].c_str());
-                device_found = true;                              //flag that is set that indicates I am within BLE range
+                //    Serial.println("Device MATCHES");
+                //    Serial.println("THERE IS A MATCHHHHHHHHHHHHHH\n");
+                //    Serial.println(str3.c_str());
+                //    Serial.println(knownBLEAddresses[i].c_str());
+                device_found = true; //flag that is set that indicates I am within BLE range
             }
             else
             {
-             //   Serial.println("Device not found");
-            //    Serial.println("No Match")
-            //    Serial.println(str3.c_str());
-            //   Serial.println(knownBLEAddresses[i].c_str());
+                //   Serial.println("Device not found");
+                //    Serial.println("No Match")
+                //    Serial.println(str3.c_str());
+                //   Serial.println(knownBLEAddresses[i].c_str());
             }
             scannumber++;
         }
@@ -141,7 +133,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     }
 };
 
-void setup() {
+void setup()
+{
     EEPROM.begin(2);
     Serial.begin(115200); //Enable UART on ESP32
     pinMode(LED_BUILTIN, OUTPUT);
@@ -151,17 +144,17 @@ void setup() {
     /* BLE Initialization */
     Serial.println("Scanning...");
     BLEDevice::init("");
-    pBLEScan = BLEDevice::getScan(); //create new scan
+    pBLEScan = BLEDevice::getScan();                                           //create new scan
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //Init Callback Function
-    pBLEScan->setActiveScan(true); //active scan uses more power, but get results faster
-    pBLEScan->setInterval(interval); // set Scan interval // TRY 128
-    pBLEScan->setWindow(window);  // less or equal setInterval value // TRY 16
+    pBLEScan->setActiveScan(true);                                             //active scan uses more power, but get results faster
+    pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
+    pBLEScan->setWindow(window);                                               // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
-
 }
-void loop() {
+void loop()
+{
     currenttime = millis();
-    Serial.println("Program Loop Start");
+    //Serial.println("Program Loop Start");
     //Time keeping function
     if (currenttime - previoustime >= time_delay)
     {
@@ -173,24 +166,23 @@ void loop() {
     if (configcounter >= 2)
     {
         Serial.println("Disable BLE\n");
-    configcounter = 0;
-    config_ble = true;
-    wifibool = false;
+        configcounter = 0;
+        config_ble = true;
+        wifibool = false;
     }
 
     //Start of the bluetooth loop
     if (!config_ble)
     {
         //BLE Functionality
-        Serial.println("BLE Loop Start");
+        //Serial.println("BLE Loop Start");
 
         //BLESCANRESULTS is where the problem of all this shenanigains lie.
 
         BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-        Serial.println("BLE End Scanresults\n");
-        Serial.println(foundDevices.getCount());
-        pBLEScan->clearResults();
-        
+        //Serial.println("BLE End Scanresults\n");
+        //Serial.println(foundDevices.getCount());
+        //pBLEScan->clearResults();
 
         for (k = 0; k < foundDevices.getCount(); k++)
         {
@@ -205,24 +197,24 @@ void loop() {
                 //Convert RSSI to Distance
                 temp = (-70 - keyrssi) / (10 * 2);
                 distance = pow(10, temp);
-                Serial.printf("Algebriac Distance of Key is (Approx) %d m \n", (int) distance);
+                Serial.printf("Algebriac Distance of Key is (Approx) %d m \n", (int)distance);
 
                 incomingData[dataCounter] = keyrssi;
                 dataCounter++;
 
-                if(dataCounter>3)
+                if (dataCounter > 3)
                 {
-                temp = (-70 - median(incomingData, dataCounter)) / (10 * 2); // uses a sample instead of just 1 value.
-                distance = pow(10, temp);
-                Serial.printf("Median-Filtered Distance of Key is (Approx) %d m \n", (int) distance);
+                    temp = (-70 - median(incomingData, dataCounter)) / (10 * 2); // uses multiple samples instead of just 1 value.
+                    distance = pow(10, temp);
+                    Serial.printf("Median-Filtered Distance of Key is (Approx) %d m \n", (int)distance);
                 }
                 //Rollover Data
-                if(dataCounter ==49) 
+                if (dataCounter == 49)
                 {
                     //Optional: Rollover data from old array to the new one.
-                    dataCounter =0;
+                    dataCounter = 0;
                 }
-                Serial.println("End of BLE Inner IF");
+                //Serial.println("End of BLE Inner IF");
             }
 
             if ((rssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
@@ -234,9 +226,7 @@ void loop() {
                 configcounter++;
                 Serial.printf("Config Counter: %d\n", configcounter);
             }
-          
 
-    
         } // END of for Loop
 
         //  PREV indicates that one of the devices is our key, is in range, AND has the correct identity.
@@ -252,10 +242,9 @@ void loop() {
                 state = 1; // Assume now outside
                 RSSI_THRESHOLD = -RSSI_CUSTOM_OUT;
                 gate_delay = false;
-
             }
-            
-            if (state == 1 && gate_delay == true)// Assume state = 1 so I am outside.
+
+            if (state == 1 && gate_delay == true) // Assume state = 1 so I am outside.
             {
                 Serial.println("Triggered, coming IN");
                 triggerGate(1500);
@@ -267,13 +256,14 @@ void loop() {
             }
             //prev = 0;
         }
-        pBLEScan->clearResults();   // delete results fromBLEScan buffer to release memory      
+        pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
     }
     else
-    { 
+    {
         /* Begin the Wifi Server*/
 
-        if (!wifibool) wifi_init(); //initialize wifi
+        if (!wifibool)
+            wifi_init();       //initialize wifi
         server.handleClient(); // handle the wifi page requests.
     }
 }
@@ -282,27 +272,33 @@ int median(int incomingData[], int dataCounter)
 {
     //Takes a simple median of sample size 3.
     int a, b, c;
-    a = incomingData[dataCounter-2];
-    b = incomingData[dataCounter-1];
+    a = incomingData[dataCounter - 2];
+    b = incomingData[dataCounter - 1];
     c = incomingData[dataCounter];
 
-    if (c > a && c> b) //c is biggest
+    if (c > a && c > b) //c is biggest
     {
-        if(a>b) return a;   // a mid
-        else return b;      //b is mid
+        if (a > b)
+            return a; // a mid
+        else
+            return b; //b is mid
     }
     if (b > a && b > c) //b is biggest
     {
-        if (a>c) return a;   //a is mid
-        else return c;   //c is mid
-    } 
+        if (a > c)
+            return a; //a is mid
+        else
+            return c; //c is mid
+    }
     if (a > b && a > c) //a is biggest
     {
-        if (b > c) return b;  //b is mid
-        else return c;        //c is mid
-    } 
+        if (b > c)
+            return b; //b is mid
+        else
+            return c; //c is mid
+    }
 
-return 0;
+    return 0;
 }
 
 void wifi_init()
@@ -339,15 +335,19 @@ void triggerGate(uint16_t delaytime)
 
 /* Web Handling Functions */
 
-void handle_OnConnect() {
+void handle_OnConnect()
+{
     server.send(200, "text/html", SendHTML(LOW)); //Not Active
     digitalWrite(LED_BUILTIN, LOW);
 }
 
-void handle_sendrssi() {
+void handle_sendrssi()
+{
 
-    if(server.arg("custom_in") != "") RSSI_CUSTOM_IN = abs(server.arg("custom_in").toInt());
-    if (server.arg("custom_out") != "") RSSI_CUSTOM_OUT = abs(server.arg("custom_out").toInt());
+    if (server.arg("custom_in") != "")
+        RSSI_CUSTOM_IN = abs(server.arg("custom_in").toInt());
+    if (server.arg("custom_out") != "")
+        RSSI_CUSTOM_OUT = abs(server.arg("custom_out").toInt());
 
     EEPROM.write(0, RSSI_CUSTOM_IN);
     EEPROM.write(1, RSSI_CUSTOM_OUT);
@@ -355,7 +355,6 @@ void handle_sendrssi() {
     delay(20); // Just in case
     Serial.println("State saved in flash memory, using -90");
     server.send(200, "text/html", refreshpageHTML());
- 
 }
 
 void handle_toggleGate()
@@ -375,14 +374,15 @@ void handle_exitconfig()
     config_ble = false;
 }
 
-void handle_NotFound() {
+void handle_NotFound()
+{
     server.send(404, "text/plain", "Not found. Are you sure you have the right fishtank?");
 }
 
-
 //Web Page Design
 
-String SendHTML(uint8_t active) {
+String SendHTML(uint8_t active)
+{
 
     ptr = "<!DOCTYPE html> <html>\n";
     ptr += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
@@ -401,9 +401,9 @@ String SendHTML(uint8_t active) {
     ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
     ptr += "</style>\n";
 
-    if(active)
+    if (active)
     {
-       ptr +="<meta http-equiv='refresh' content='2;url=/'>\n";
+        ptr += "<meta http-equiv='refresh' content='2;url=/'>\n";
     }
 
     ptr += "</head>\n";
@@ -437,8 +437,8 @@ String SendHTML(uint8_t active) {
     return ptr;
 }
 
-String refreshpageHTML () {
-
+String refreshpageHTML()
+{
 
     ptr = "<!DOCTYPE html> <html>\n";
     ptr += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
@@ -455,7 +455,7 @@ String refreshpageHTML () {
     ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
     ptr += "</style>\n";
 
-        ptr += "<meta http-equiv='refresh' content='2;url=/'>\n";
+    ptr += "<meta http-equiv='refresh' content='2;url=/'>\n";
 
     ptr += "</head>\n";
     ptr += "<body>\n";
@@ -466,5 +466,3 @@ String refreshpageHTML () {
     ptr += "</html>\n";
     return ptr;
 }
-
-
