@@ -1,9 +1,9 @@
 #include <Arduino.h>
 
-/* SOMETHING TO DO WITH LIBRARYS BEING INGIREREREREED.
+/* 
  *  BLE Bluetooth Beacon, Adapted from Arduino Examples
- *  Adriaan van WIjk
- *  Last Mod:  Jan 2021
+ *  Adriaan van Wijk
+ *  2021
  *
  *  This program is meant for a ESP32 board which will search for BLE devices. It then matches a BLE device
  *  with a set of known MAC address (or other identifiable data) and if it matches, and is in range, will function as
@@ -74,7 +74,7 @@ uint16_t interval = 1100; //the intervals at which scanning is actively taking p
 uint16_t window = 1099;   //the window of time after each interval which is being scanned in milliseconds
 uint16_t configcounter = 0;
 double distance = 0;
-double temp;
+double temp = -1;
 
 unsigned long previoustime = 0;
 const long time_delay = 15000;
@@ -186,35 +186,28 @@ void loop()
 
         for (k = 0; k < foundDevices.getCount(); k++)
         {
-            Serial.printf("Loop of FoundDevices: %d\n", k);
+            //Serial.printf("Loop of FoundDevices: %d\n", k);
             BLEAdvertisedDevice device = foundDevices.getDevice(k);
             rssi = device.getRSSI();
             if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0)
             {
-                Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
+                //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
                 keyrssi = rssi;
-
+                //Serial.printf("RSSIA %d\n", rssi);
                 //Convert RSSI to Distance
-                temp = (-70 - keyrssi) / (10 * 2);
+                // Source : https://iotandelectronics.wordpress.com/2016/10/07/how-to-calculate-distance-from-the-rssi-value-of-the-ble-beacon/
+                temp = -70 - rssi;
+                temp = temp/40; // The 40 is arbitrary and must be tuned.
                 distance = pow(10, temp);
-                Serial.printf("Algebriac Distance of Key is (Approx) %d m \n", (int)distance);
+                //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
+                //Serial.printf("%f,\n", (double)rssi);
+                //Serial.printf("%f\n", distance);
+              
 
-                incomingData[dataCounter] = keyrssi;
-                dataCounter++;
+                    //Serial.write("%d", rssi);
+                    //Serial.write("%d",(int16_t)distance);
 
-                if (dataCounter > 3)
-                {
-                    temp = (-70 - median(incomingData, dataCounter)) / (10 * 2); // uses multiple samples instead of just 1 value.
-                    distance = pow(10, temp);
-                    Serial.printf("Median-Filtered Distance of Key is (Approx) %d m \n", (int)distance);
-                }
-                //Rollover Data
-                if (dataCounter == 49)
-                {
-                    //Optional: Rollover data from old array to the new one.
-                    dataCounter = 0;
-                }
-                //Serial.println("End of BLE Inner IF");
+                
             }
 
             if ((rssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
@@ -235,7 +228,7 @@ void loop()
             //TRIGGER ENABLED.
             if (state == 0 && gate_delay == true)
             {
-                Serial.println("Triggered, going OUT");
+                //Serial.println("Triggered, going OUT");
                 triggerGate(1500);
                 device_found = false; // Reset device found, so it needs to be triggered again.
                 prev = 0;
@@ -246,7 +239,7 @@ void loop()
 
             if (state == 1 && gate_delay == true) // Assume state = 1 so I am outside.
             {
-                Serial.println("Triggered, coming IN");
+                //Serial.println("Triggered, coming IN");
                 triggerGate(1500);
                 device_found = false; // Reset device found, so it needs to be triggered again.
                 prev = 0;
@@ -268,6 +261,7 @@ void loop()
     }
 }
 
+//Unused at the moment. For future Statistics work.
 int median(int incomingData[], int dataCounter)
 {
     //Takes a simple median of sample size 3.
