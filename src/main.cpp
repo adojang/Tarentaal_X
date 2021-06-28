@@ -304,6 +304,8 @@ int median(int incomingData[], int dataCounter)
 void wifi_init()
 {
     /* Wifi Intialization */
+
+    //Must be rewritten to only flash light not trigger gate lol.
     triggerGate(200);
     delay(200);
     triggerGate(200);
@@ -338,7 +340,7 @@ void triggerGate(uint16_t delaytime)
 void handle_OnConnect()
 {
     server.send(200, "text/html", SendHTML(LOW)); //Not Active
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN, LOW); // lol why is this here
 }
 
 void handle_sendrssi()
