@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
 /* 
- *  BLE Bluetooth Beacon, Adapted from Arduino Examples
+ *  BLE Bluetooth Beacon, Adapted from Arduino Examples and various other sources.
  *  Adriaan van Wijk
  *  2021
  *
@@ -59,7 +59,7 @@ String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
 
 /* Constants */
 int RSSI_THRESHOLD = -88;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
-int RSSI_CONFIG = -50;        // For starting the Webserver
+int RSSI_CONFIG = -40;        // For starting the Webserver
 uint8_t RSSI_CUSTOM_IN = 88;  //The EEPROM value will overwrite this.
 uint8_t RSSI_CUSTOM_OUT = 88; //The EEPROM value will overwrite this.
 
@@ -67,6 +67,17 @@ bool device_found = false;
 bool wifibool = false;
 bool config_ble = false;
 bool gate_delay = true; // Set as true so we don't need to wait for timedelay on first boot. Gate is primed after restart.
+
+/* More Constants */
+
+uint8_t s_trigger = 26;
+uint8_t s_config = 25;
+uint8_t s_up = 14;
+uint8_t s_down = 27;
+uint8_t s_enter = 13;
+uint8_t LED_BLE = 17;
+uint8_t LED_WIFI = 18;
+uint8_t LED_TRIGGER = 16;
 
 uint8_t LED_BUILTIN = 2;
 uint32_t scanTime = 2;    //Duration of each scan in seconds
@@ -137,6 +148,16 @@ void setup()
 {
     EEPROM.begin(2);
     Serial.begin(115200); //Enable UART on ESP32
+
+    pinMode(s_trigger, INPUT);
+    pinMode(s_config, INPUT);
+    pinMode(s_up, INPUT);
+    pinMode(s_down, INPUT);
+    pinMode(s_enter, INPUT);
+    pinMode(LED_BLE, OUTPUT);
+    pinMode(LED_WIFI, OUTPUT);
+    pinMode(LED_TRIGGER, OUTPUT);
+
     pinMode(LED_BUILTIN, OUTPUT);
     RSSI_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
     RSSI_CUSTOM_OUT = EEPROM.read(1);
@@ -165,15 +186,32 @@ void loop()
     //Config flag function
     if (configcounter >= 2)
     {
+        
         Serial.println("Disable BLE\n");
         configcounter = 0;
         config_ble = true;
         wifibool = false;
     }
 
+    if ((digitalRead(s_config) == 1) && (!config_ble))
+    {
+        Serial.println("Config Button Pushed, Disable BLE\n");
+        configcounter = 0;
+        config_ble = true;
+        wifibool = false;
+    }
+
+    if (digitalRead(s_trigger) == 1)
+    {
+        Serial.println("Gate Trigger Button Pushed");
+        triggerGate(1500);
+    }
+
     //Start of the bluetooth loop
     if (!config_ble)
     {
+        digitalWrite(LED_WIFI, LOW);
+        digitalWrite(LED_BLE, HIGH);
         //BLE Functionality
         //Serial.println("BLE Loop Start");
 
@@ -191,7 +229,7 @@ void loop()
             rssi = device.getRSSI();
             if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0)
             {
-                //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
+                Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
                 keyrssi = rssi;
                 //Serial.printf("RSSIA %d\n", rssi);
                 //Convert RSSI to Distance
@@ -199,7 +237,7 @@ void loop()
                 temp = -70 - rssi;
                 temp = temp/40; // The 40 is arbitrary and must be tuned.
                 distance = pow(10, temp);
-                //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
+                Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
                 //Serial.printf("%f,\n", (double)rssi);
                 //Serial.printf("%f\n", distance);
               
@@ -259,6 +297,15 @@ void loop()
             wifi_init();       //initialize wifi
         server.handleClient(); // handle the wifi page requests.
     }
+    if ((digitalRead(s_config) == 1) && (config_ble))
+    {
+        digitalWrite(LED_BLE, HIGH);
+        Serial.println("\n Button Pushed, Disabling Wifi");
+        WiFi.softAPdisconnect(true);
+        config_ble = false;
+        delay(2222); // Used because I haven't implemented interrupts for buttons.
+    }
+    
 }
 
 //Unused at the moment. For future Statistics work.
@@ -300,12 +347,8 @@ void wifi_init()
     /* Wifi Intialization */
 
     //Must be rewritten to only flash light not trigger gate lol.
-    triggerGate(200);
-    delay(200);
-    triggerGate(200);
-    delay(200);
-    triggerGate(200);
-
+    digitalWrite(LED_BLE, LOW);
+    digitalWrite(LED_WIFI, HIGH);
     WiFi.softAP(ssid, password);
     delay(2000); // Important so it doesn't crash... Probably
     WiFi.softAPConfig(local_ip, gateway, subnet);
@@ -324,17 +367,19 @@ void wifi_init()
 /* Functions Library: */
 void triggerGate(uint16_t delaytime)
 {
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_TRIGGER, HIGH);
     delay(delaytime);
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_TRIGGER, LOW);
 }
+
+
 
 /* Web Handling Functions */
 
 void handle_OnConnect()
 {
     server.send(200, "text/html", SendHTML(LOW)); //Not Active
-    digitalWrite(LED_BUILTIN, LOW); // lol why is this here
+    digitalWrite(LED_TRIGGER, LOW); // lol why is this here
 }
 
 void handle_sendrssi()
@@ -349,13 +394,15 @@ void handle_sendrssi()
     EEPROM.write(1, RSSI_CUSTOM_OUT);
     EEPROM.commit();
     delay(20); // Just in case
-    Serial.println("State saved in flash memory, using -90");
+    Serial.println("State saved in flash memory:");
+    Serial.printf("Custom IN: %d\n", RSSI_CUSTOM_IN);
+    Serial.printf("Custom OUT: %d\n", RSSI_CUSTOM_OUT);
     server.send(200, "text/html", refreshpageHTML());
 }
 
 void handle_toggleGate()
 {
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_TRIGGER, HIGH);
     server.send(200, "text/html", SendHTML(HIGH)); //Active
     delay(1500);
     handle_OnConnect();
@@ -421,7 +468,7 @@ String SendHTML(uint8_t active)
 
     /* Form and Button Part*/
     ptr += "<form action=\"/sendrssi\" method=\"POST\"><input type = \"number\" name = \"custom_in\" placeholder = \"Custom RSSI coming in\"><br>";
-    ptr += "<input type = \"number\" name = \"custom_out\" placeholder = \"Custom RSSI going out\"><br>";
+    ptr += "<input type = \"number\" name = \"custom_out\" style = \"border-color:green;\"placeholder = \"Custom RSSI going out\"><br>";
     ptr += "<br><input type = \"submit\" value = \"Enter\">";
     ptr += "</form>";
 
