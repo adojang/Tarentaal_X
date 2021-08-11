@@ -4,7 +4,7 @@
  *  BLE Bluetooth Beacon, Adapted from Arduino Examples and various other sources.
  *  Adriaan van Wijk
  *  2021
- *
+ *  Additional Libraries by Rinky-Dink (OLED) and the guy who wrote the BLE one.
  *  This program is meant for a ESP32 board which will search for BLE devices. It then matches a BLE device
  *  with a set of known MAC address (or other identifiable data) and if it matches, and is in range, will function as
  *  a trigger that can allow other applications, such as opening a gate, for example.
@@ -14,8 +14,6 @@
  *
  *  To Do:
  *
- *  - Multiple users, profiles, use EEPROM, remember who's in and out etc. etc.
- *  - Build a watchdog that will reset the ESP if something goes terribly wrong.
  * 
  * 
  */
@@ -27,7 +25,7 @@
 #include "BLEScan.h"
 #include "BLEAdvertisedDevice.h"
 #include <EEPROM.h>
-
+#include <OLED_I2C.h>
 #include <iostream>
 #include <string>
 
@@ -69,21 +67,23 @@ bool config_ble = false;
 bool gate_delay = true; // Set as true so we don't need to wait for timedelay on first boot. Gate is primed after restart.
 
 /* More Constants */
-
-uint8_t s_trigger = 26;
-uint8_t s_config = 25;
-uint8_t s_up = 14;
-uint8_t s_down = 27;
-uint8_t s_enter = 13;
+// uint8_t s_trigger = 26;
+// uint8_t s_config = 25;
+// uint8_t s_up = 14;
+// uint8_t s_down = 27;
+// uint8_t s_enter = 13;
 uint8_t LED_BLE = 17;
 uint8_t LED_WIFI = 18;
 uint8_t LED_TRIGGER = 16;
 
-uint8_t LED_BUILTIN = 2;
+uint8_t linenumber = 0;
+uint8_t LED_BUILTIN = 2; // Can Remove
+
 uint32_t scanTime = 2;    //Duration of each scan in seconds
 uint16_t interval = 1100; //the intervals at which scanning is actively taking place in milliseconds
 uint16_t window = 1099;   //the window of time after each interval which is being scanned in milliseconds
 uint16_t configcounter = 0;
+
 double distance = 0;
 double temp = -1;
 
@@ -106,13 +106,54 @@ String str3;
 BLEScan *pBLEScan; //ble pointer
 std::string addressReturn;
 
+OLED myOLED(21, 22);
+extern uint8_t SmallFont[];
+extern uint8_t MedNum[];
+
+/* Button Interrupt Handling */
+
+struct Button
+{
+    const uint8_t PIN;
+    uint32_t numberKeyPresses;
+};
+
+Button b_trigger = {26, 0};
+Button b_config = {25, 0};
+Button b_up = {14, 0};
+Button b_down = {27, 0};
+Button b_enter = {13, 0};
+
+void IRAM_ATTR i_trigger()
+{
+    b_trigger.numberKeyPresses += 1;
+    //QQQ THIS IS PROBABLY A HORRIBLE IDEA
+    digitalWrite(LED_TRIGGER, HIGH);
+}
+void IRAM_ATTR i_config()
+{
+    b_config.numberKeyPresses += 1;
+}
+void IRAM_ATTR i_up()
+{
+    b_up.numberKeyPresses += 1;
+}
+void IRAM_ATTR i_down()
+{
+    b_down.numberKeyPresses += 1;
+}
+void IRAM_ATTR i_enter()
+{
+    b_enter.numberKeyPresses += 1;
+}
+
 /* BLE Function Code */
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
     void onResult(BLEAdvertisedDevice advertisedDevice)
     {
-       // Serial.println("Function For Loop Start...");
+        // Serial.println("Function For Loop Start...");
         for (int i = 0; i < (sizeof(knownBLEAddresses) / sizeof(knownBLEAddresses[i])); i++)
         {
             //Compare Each incoming signal with my code above and if it matches, set a flag that the key is within range.
@@ -149,11 +190,18 @@ void setup()
     EEPROM.begin(2);
     Serial.begin(115200); //Enable UART on ESP32
 
-    pinMode(s_trigger, INPUT);
-    pinMode(s_config, INPUT);
-    pinMode(s_up, INPUT);
-    pinMode(s_down, INPUT);
-    pinMode(s_enter, INPUT);
+    pinMode(b_trigger.PIN, INPUT);
+    pinMode(b_config.PIN, INPUT);
+    pinMode(b_up.PIN, INPUT);
+    pinMode(b_down.PIN, INPUT);
+    pinMode(b_enter.PIN, INPUT);
+
+    attachInterrupt(b_trigger.PIN, i_trigger, HIGH);
+    attachInterrupt(b_config.PIN, i_config, HIGH);
+    attachInterrupt(b_up.PIN, i_up, HIGH);
+    attachInterrupt(b_down.PIN, i_down, HIGH);
+    attachInterrupt(b_enter.PIN, i_enter, HIGH);
+
     pinMode(LED_BLE, OUTPUT);
     pinMode(LED_WIFI, OUTPUT);
     pinMode(LED_TRIGGER, OUTPUT);
@@ -161,6 +209,15 @@ void setup()
     pinMode(LED_BUILTIN, OUTPUT);
     RSSI_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
     RSSI_CUSTOM_OUT = EEPROM.read(1);
+
+    /* OLED Screen */
+    if (!myOLED.begin(SSD1306_128X64))
+    {
+        Serial.println("Failed memory allocation...");
+        while (1)
+            ; // In case the library failed to allocate enough RAM for the display buffer...
+    }
+    myOLED.setFont(SmallFont);
 
     /* BLE Initialization */
     Serial.println("Scanning...");
@@ -176,42 +233,68 @@ void loop()
 {
     currenttime = millis();
     //Serial.println("Program Loop Start");
-    //Time keeping function
+    //Time keeping function used to prevent multiple gate retriggers
     if (currenttime - previoustime >= time_delay)
     {
         previoustime = currenttime;
         gate_delay = true;
     }
 
-    //Config flag function
-    if (configcounter >= 2)
+    /* Proximity Based Config Trigger */
+    if (configcounter >= 2) // 2 Is arbitrary, can be more
     {
-        
+
         Serial.println("Disable BLE\n");
         configcounter = 0;
         config_ble = true;
         wifibool = false;
     }
 
-    if ((digitalRead(s_config) == 1) && (!config_ble))
+    /* Exit BLE Mode, Start Wifi */
+    if ((b_config.numberKeyPresses > 2) && (!config_ble))
     {
         Serial.println("Config Button Pushed, Disable BLE\n");
         configcounter = 0;
         config_ble = true;
         wifibool = false;
+        delay(25);
+        b_config.numberKeyPresses = 0;
     }
 
-    if (digitalRead(s_trigger) == 1)
+    /* Exit Wifi Mode, Return to BLE */
+    if ((b_config.numberKeyPresses > 2) && (config_ble))
+    {
+        digitalWrite(LED_BLE, HIGH);
+        Serial.println("\n Button Pushed, Disabling Wifi");
+        WiFi.softAPdisconnect(true);
+        config_ble = false;
+        delay(25);
+        b_config.numberKeyPresses = 0;
+    }
+
+    /* Trigger Gate */
+    if (b_trigger.numberKeyPresses > 2)
     {
         Serial.println("Gate Trigger Button Pushed");
         triggerGate(1500);
+        delay(25);
+        b_trigger.numberKeyPresses = 0;
     }
 
-    //Start of the bluetooth loop
-    if (!config_ble)
+    if (!config_ble) /* Start of BLE Loop */
     {
         digitalWrite(LED_WIFI, LOW);
         digitalWrite(LED_BLE, HIGH);
+
+        /* OLED DISPLAY UPDATE */
+        myOLED.clrScr();
+        myOLED.print("RSSI:", LEFT, 8);
+        myOLED.printNumI(keyrssi, RIGHT, 8);
+        myOLED.print("Algebraic Dist:", LEFT, 24);
+        myOLED.printNumF(distance, 3, RIGHT, 24); // 0.123
+        myOLED.print("Kalmann Filter:", LEFT, 40);
+        myOLED.update();
+
         //BLE Functionality
         //Serial.println("BLE Loop Start");
 
@@ -235,17 +318,15 @@ void loop()
                 //Convert RSSI to Distance
                 // Source : https://iotandelectronics.wordpress.com/2016/10/07/how-to-calculate-distance-from-the-rssi-value-of-the-ble-beacon/
                 temp = -70 - rssi;
-                temp = temp/40; // The 40 is arbitrary and must be tuned.
+                temp = temp / 40; // The 40 is arbitrary and must be tuned.
                 distance = pow(10, temp);
                 Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
+
                 //Serial.printf("%f,\n", (double)rssi);
                 //Serial.printf("%f\n", distance);
-              
 
-                    //Serial.write("%d", rssi);
-                    //Serial.write("%d",(int16_t)distance);
-
-                
+                //Serial.write("%d", rssi);
+                //Serial.write("%d",(int16_t)distance);
             }
 
             if ((rssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
@@ -289,66 +370,144 @@ void loop()
         }
         pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
     }
-    else
+    else /* Start of Wifi Server*/
     {
-        /* Begin the Wifi Server*/
-
         if (!wifibool)
-            wifi_init();       //initialize wifi
-        server.handleClient(); // handle the wifi page requests.
-    }
-    if ((digitalRead(s_config) == 1) && (config_ble))
-    {
-        digitalWrite(LED_BLE, HIGH);
-        Serial.println("\n Button Pushed, Disabling Wifi");
-        WiFi.softAPdisconnect(true);
-        config_ble = false;
-        delay(2222); // Used because I haven't implemented interrupts for buttons.
+            wifi_init();       //initialize wifi, runs once.
+        server.handleClient(); // handle the wifi page requests
+
+        /*Update OLED Display */
+        myOLED.clrScr();
+        myOLED.print("Editing Values:", LEFT, 8);
+        myOLED.print("Custom RSSI IN:", LEFT, 24);
+        myOLED.printNumI(-RSSI_CUSTOM_IN, RIGHT, 24);
+        myOLED.print("Custom RSSI OUT:", LEFT, 40);
+        myOLED.printNumI(-RSSI_CUSTOM_OUT, RIGHT, 40);
+        myOLED.update();
+
+        if (linenumber == 0) //On the first line of OLED Display
+        {
+            //Consdier including a flash indicator here.
+            if (b_up.numberKeyPresses > 2)
+            {
+                RSSI_CUSTOM_IN += 2;
+                delay(25);
+                b_up.numberKeyPresses = 0;
+            }
+
+            if (b_down.numberKeyPresses > 2)
+            {
+                RSSI_CUSTOM_IN -= 2;
+                delay(25);
+                b_down.numberKeyPresses = 0;
+            }
+
+            if (b_enter.numberKeyPresses > 2)
+            {
+                linenumber = 1;
+                delay(25);
+                b_enter.numberKeyPresses = 0;
+            }
+        }
+        if (linenumber == 1) //On the second line of OLED Display
+        {
+            //Consdier including a flash indicator here.
+            if (b_up.numberKeyPresses > 2)
+            {
+                RSSI_CUSTOM_OUT += 2;
+                delay(25);
+                b_up.numberKeyPresses = 0;
+            }
+
+            if (b_down.numberKeyPresses > 2)
+            {
+                RSSI_CUSTOM_OUT -= 2;
+                delay(25);
+                b_down.numberKeyPresses = 0;
+            }
+
+            if (b_enter.numberKeyPresses > 2)
+            {
+                linenumber = 0;
+//ENABLE FOR PRODUCTION BELOW
+//                 EEPROM.write(0, RSSI_CUSTOM_IN);
+//                 EEPROM.write(1, RSSI_CUSTOM_OUT);
+//                 EEPROM.commit();
+                 Serial.println("State saved in flash memory:");
+                 Serial.printf("Custom IN: %d\n", RSSI_CUSTOM_IN);
+                 Serial.printf("Custom OUT: %d\n", RSSI_CUSTOM_OUT);
+                // Update OLED to show value has been saved.
+                 myOLED.clrScr();       
+                 myOLED.print("Custom Values Saved", CENTER, 24);
+                 myOLED.update();
+                 delay(2000); // To allow user to read message
+                 b_enter.numberKeyPresses = 0;
+            }
+        }
+
     }
     
-}
 
-//Unused at the moment. For future Statistics work.
-int median(int incomingData[], int dataCounter)
+} // end of main loop
+
+// //Unused at the moment. For future Statistics work.
+// int median(int incomingData[], int dataCounter)
+// {
+//     //Takes a simple median of sample size 3.
+//     int a, b, c;
+//     a = incomingData[dataCounter - 2];
+//     b = incomingData[dataCounter - 1];
+//     c = incomingData[dataCounter];
+
+//     if (c > a && c > b) //c is biggest
+//     {
+//         if (a > b)
+//             return a; // a mid
+//         else
+//             return b; //b is mid
+//     }
+//     if (b > a && b > c) //b is biggest
+//     {
+//         if (a > c)
+//             return a; //a is mid
+//         else
+//             return c; //c is mid
+//     }
+//     if (a > b && a > c) //a is biggest
+//     {
+//         if (b > c)
+//             return b; //b is mid
+//         else
+//             return c; //c is mid
+//     }
+
+//     return 0;
+// }
+
+/* Functions Library: */
+void triggerGate(uint16_t delaytime)
 {
-    //Takes a simple median of sample size 3.
-    int a, b, c;
-    a = incomingData[dataCounter - 2];
-    b = incomingData[dataCounter - 1];
-    c = incomingData[dataCounter];
-
-    if (c > a && c > b) //c is biggest
-    {
-        if (a > b)
-            return a; // a mid
-        else
-            return b; //b is mid
-    }
-    if (b > a && b > c) //b is biggest
-    {
-        if (a > c)
-            return a; //a is mid
-        else
-            return c; //c is mid
-    }
-    if (a > b && a > c) //a is biggest
-    {
-        if (b > c)
-            return b; //b is mid
-        else
-            return c; //c is mid
-    }
-
-    return 0;
+    digitalWrite(LED_TRIGGER, HIGH);
+    digitalWrite(LED_WIFI, LOW);
+    digitalWrite(LED_BLE, LOW);
+    delay(delaytime);
+    digitalWrite(LED_TRIGGER, LOW);
 }
-
-void wifi_init()
+void wifi_init() /* Wifi Intialization - Runs Once. */
 {
-    /* Wifi Intialization */
 
     //Must be rewritten to only flash light not trigger gate lol.
     digitalWrite(LED_BLE, LOW);
     digitalWrite(LED_WIFI, HIGH);
+
+    myOLED.clrScr();
+    myOLED.print("BEGIN Wifi Mode lol", LEFT, 8);
+    myOLED.print("Custom RSSI IN:", LEFT, 24);
+    myOLED.printNumI(RSSI_CUSTOM_IN, RIGHT, 24);
+    myOLED.print("Custom RSSI OUT:", LEFT, 40);
+    myOLED.printNumI(RSSI_CUSTOM_OUT, RIGHT, 40);
+    myOLED.update();
+
     WiFi.softAP(ssid, password);
     delay(2000); // Important so it doesn't crash... Probably
     WiFi.softAPConfig(local_ip, gateway, subnet);
@@ -364,22 +523,13 @@ void wifi_init()
     Serial.println("HTTP server started");
     wifibool = true;
 }
-/* Functions Library: */
-void triggerGate(uint16_t delaytime)
-{
-    digitalWrite(LED_TRIGGER, HIGH);
-    delay(delaytime);
-    digitalWrite(LED_TRIGGER, LOW);
-}
-
-
 
 /* Web Handling Functions */
 
 void handle_OnConnect()
 {
     server.send(200, "text/html", SendHTML(LOW)); //Not Active
-    digitalWrite(LED_TRIGGER, LOW); // lol why is this here
+    digitalWrite(LED_TRIGGER, LOW);               // lol why is this here
 }
 
 void handle_sendrssi()
@@ -422,7 +572,7 @@ void handle_NotFound()
     server.send(404, "text/plain", "Not found. Are you sure you have the right fishtank?");
 }
 
-//Web Page Design
+/* Web Page Design */
 
 String SendHTML(uint8_t active)
 {
