@@ -79,7 +79,7 @@ uint8_t LED_TRIGGER = 16;
 uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Can Remove
 
-uint32_t scanTime = 2;    //Duration of each scan in seconds
+uint32_t scanTime = 1;    //Duration of each scan in seconds 2 1100 1099
 uint16_t interval = 1100; //the intervals at which scanning is actively taking place in milliseconds
 uint16_t window = 1099;   //the window of time after each interval which is being scanned in milliseconds
 uint16_t configcounter = 0;
@@ -128,7 +128,8 @@ void IRAM_ATTR i_trigger()
 {
     b_trigger.numberKeyPresses += 1;
     //QQQ THIS IS PROBABLY A HORRIBLE IDEA
-    digitalWrite(LED_TRIGGER, HIGH);
+    //digitalWrite(LED_TRIGGER, HIGH);
+    //Note that by doing this I'm also triggering the REMOTE. Connected on SAME PIN.
 }
 void IRAM_ATTR i_config()
 {
@@ -190,11 +191,11 @@ void setup()
     EEPROM.begin(2);
     Serial.begin(115200); //Enable UART on ESP32
 
-    pinMode(b_trigger.PIN, INPUT);
-    pinMode(b_config.PIN, INPUT);
-    pinMode(b_up.PIN, INPUT);
-    pinMode(b_down.PIN, INPUT);
-    pinMode(b_enter.PIN, INPUT);
+    pinMode(b_trigger.PIN, INPUT_PULLUP);
+    pinMode(b_config.PIN, INPUT_PULLUP);
+    pinMode(b_up.PIN, INPUT_PULLUP);
+    pinMode(b_down.PIN, INPUT_PULLUP);
+    pinMode(b_enter.PIN, INPUT_PULLUP);
 
     attachInterrupt(b_trigger.PIN, i_trigger, HIGH);
     attachInterrupt(b_config.PIN, i_config, HIGH);
@@ -251,7 +252,7 @@ void loop()
     }
 
     /* Exit BLE Mode, Start Wifi */
-    if ((b_config.numberKeyPresses > 2) && (!config_ble))
+    if ((b_config.numberKeyPresses > 0) && (!config_ble))
     {
         Serial.println("Config Button Pushed, Disable BLE\n");
         configcounter = 0;
@@ -262,7 +263,7 @@ void loop()
     }
 
     /* Exit Wifi Mode, Return to BLE */
-    if ((b_config.numberKeyPresses > 2) && (config_ble))
+    if ((b_config.numberKeyPresses > 0) && (config_ble))
     {
         digitalWrite(LED_BLE, HIGH);
         Serial.println("\n Button Pushed, Disabling Wifi");
@@ -273,14 +274,14 @@ void loop()
     }
 
     /* Trigger Gate */
-    if (b_trigger.numberKeyPresses > 2)
+    if (b_trigger.numberKeyPresses > 0)
     {
         Serial.println("Gate Trigger Button Pushed");
         triggerGate(1500);
         delay(25);
         b_trigger.numberKeyPresses = 0;
     }
-
+    //unsigned long blescantime =0;
     if (!config_ble) /* Start of BLE Loop */
     {
         digitalWrite(LED_WIFI, LOW);
@@ -298,9 +299,15 @@ void loop()
         //BLE Functionality
         //Serial.println("BLE Loop Start");
 
+       
+        //WiFi.softAPdisconnect(true);
         //BLESCANRESULTS is where the problem of all this shenanigains lie.
+        //blescantime = millis();
+        BLEScanResults foundDevices = pBLEScan->start(scanTime, false); // This Takes 1 Second.
+        //Serial.println(millis() - blescantime);
 
-        BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+        //WiFi.softAP(ssid, password);
+        //WiFi.softAPConfig(local_ip, gateway, subnet);
         //Serial.println("BLE End Scanresults\n");
         //Serial.println(foundDevices.getCount());
         //pBLEScan->clearResults();
@@ -312,7 +319,9 @@ void loop()
             rssi = device.getRSSI();
             if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0)
             {
-                Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
+                //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
+                Serial.printf("%d\n", rssi);
+                
                 keyrssi = rssi;
                 //Serial.printf("RSSIA %d\n", rssi);
                 //Convert RSSI to Distance
@@ -320,7 +329,7 @@ void loop()
                 temp = -70 - rssi;
                 temp = temp / 40; // The 40 is arbitrary and must be tuned.
                 distance = pow(10, temp);
-                Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
+                //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
 
                 //Serial.printf("%f,\n", (double)rssi);
                 //Serial.printf("%f\n", distance);
@@ -388,21 +397,21 @@ void loop()
         if (linenumber == 0) //On the first line of OLED Display
         {
             //Consdier including a flash indicator here.
-            if (b_up.numberKeyPresses > 2)
+            if (b_up.numberKeyPresses > 0)
             {
                 RSSI_CUSTOM_IN += 2;
                 delay(25);
                 b_up.numberKeyPresses = 0;
             }
 
-            if (b_down.numberKeyPresses > 2)
+            if (b_down.numberKeyPresses > 0)
             {
                 RSSI_CUSTOM_IN -= 2;
                 delay(25);
                 b_down.numberKeyPresses = 0;
             }
 
-            if (b_enter.numberKeyPresses > 2)
+            if (b_enter.numberKeyPresses > 0)
             {
                 linenumber = 1;
                 delay(25);
@@ -412,21 +421,21 @@ void loop()
         if (linenumber == 1) //On the second line of OLED Display
         {
             //Consdier including a flash indicator here.
-            if (b_up.numberKeyPresses > 2)
+            if (b_up.numberKeyPresses > 0)
             {
                 RSSI_CUSTOM_OUT += 2;
                 delay(25);
                 b_up.numberKeyPresses = 0;
             }
 
-            if (b_down.numberKeyPresses > 2)
+            if (b_down.numberKeyPresses > 0)
             {
                 RSSI_CUSTOM_OUT -= 2;
                 delay(25);
                 b_down.numberKeyPresses = 0;
             }
 
-            if (b_enter.numberKeyPresses > 2)
+            if (b_enter.numberKeyPresses > 0)
             {
                 linenumber = 0;
 //ENABLE FOR PRODUCTION BELOW
