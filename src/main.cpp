@@ -56,10 +56,10 @@ WebServer server(80);
 String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
 
 /* Constants */
-int RSSI_THRESHOLD = -88;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
+int RSSI_THRESHOLD = -60;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
 int RSSI_CONFIG = -40;        // For starting the Webserver
-uint8_t RSSI_CUSTOM_IN = 88;  //The EEPROM value will overwrite this.
-uint8_t RSSI_CUSTOM_OUT = 88; //The EEPROM value will overwrite this.
+uint8_t RSSI_CUSTOM_IN = 60;  //The EEPROM value will overwrite this.
+uint8_t RSSI_CUSTOM_OUT = 60; //The EEPROM value will overwrite this.
 
 bool device_found = false;
 bool wifibool = false;
@@ -80,15 +80,16 @@ uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Can Remove
 
 uint32_t scanTime = 1;    //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 1100; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 1099;   //the window of time after each interval which is being scanned in milliseconds
+uint16_t interval = 100; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 100;   //the window of time after each interval which is being scanned in milliseconds
+//500 here is the best compromise. lower for better wifi, higher for better ble.
 uint16_t configcounter = 0;
 
 double distance = 0;
 double temp = -1;
 
 unsigned long previoustime = 0;
-const long time_delay = 15000;
+const long time_delay = 1000; // Ideally 15 sec, in ms.
 unsigned long currenttime;
 int pos = 0;
 int scannumber = 0;
@@ -105,6 +106,8 @@ String str;
 String str3;
 BLEScan *pBLEScan; //ble pointer
 std::string addressReturn;
+
+unsigned long blescantime =0;
 
 OLED myOLED(21, 22);
 extern uint8_t SmallFont[];
@@ -211,13 +214,9 @@ void setup()
     RSSI_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
     RSSI_CUSTOM_OUT = EEPROM.read(1);
 
-    /* OLED Screen */
-    if (!myOLED.begin(SSD1306_128X64))
-    {
-        Serial.println("Failed memory allocation...");
-        while (1)
-            ; // In case the library failed to allocate enough RAM for the display buffer...
-    }
+
+    if(!myOLED.begin(SSD1306_128X64))
+        while(1);   // In case the library failed to allocate enough RAM for the display buffer...
     myOLED.setFont(SmallFont);
 
     /* BLE Initialization */
@@ -229,6 +228,13 @@ void setup()
     pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
     pBLEScan->setWindow(window);                                               // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
+
+    
+    //Start WIFI and BLE simultaneously
+    //Enable if you want Simultaneous BLE and Wifi.
+    //wifi_init();
+
+
 }
 void loop()
 {
@@ -281,7 +287,7 @@ void loop()
         delay(25);
         b_trigger.numberKeyPresses = 0;
     }
-    //unsigned long blescantime =0;
+    
     if (!config_ble) /* Start of BLE Loop */
     {
         digitalWrite(LED_WIFI, LOW);
@@ -299,28 +305,27 @@ void loop()
         //BLE Functionality
         //Serial.println("BLE Loop Start");
 
-       
-        //WiFi.softAPdisconnect(true);
-        //BLESCANRESULTS is where the problem of all this shenanigains lie.
-        //blescantime = millis();
         BLEScanResults foundDevices = pBLEScan->start(scanTime, false); // This Takes 1 Second.
-        //Serial.println(millis() - blescantime);
-
-        //WiFi.softAP(ssid, password);
-        //WiFi.softAPConfig(local_ip, gateway, subnet);
+  
+        //Needed if you want simultaneous wifi to work.
+        //server.handleClient();
+       
         //Serial.println("BLE End Scanresults\n");
         //Serial.println(foundDevices.getCount());
-        //pBLEScan->clearResults();
 
         for (k = 0; k < foundDevices.getCount(); k++)
         {
             //Serial.printf("Loop of FoundDevices: %d\n", k);
             BLEAdvertisedDevice device = foundDevices.getDevice(k);
             rssi = device.getRSSI();
-            if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0)
+            if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0) // Restricts to only KNOWN mac addresses. 0 when identical.
             {
+                /*BLE Beacon has been found and is within range. */
+                Serial.println(millis() - blescantime); // The time between sucessive updates
+                blescantime = millis();
+
                 //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
-                Serial.printf("%d\n", rssi);
+                //Serial.printf("%d\n", rssi);
                 
                 keyrssi = rssi;
                 //Serial.printf("RSSIA %d\n", rssi);
@@ -341,6 +346,7 @@ void loop()
             if ((rssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
             {
                 prev = 1; // Light was turned on previously in this loop
+                Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
             }
             if ((rssi > RSSI_CONFIG) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
             {
@@ -356,7 +362,7 @@ void loop()
             //TRIGGER ENABLED.
             if (state == 0 && gate_delay == true)
             {
-                //Serial.println("Triggered, going OUT");
+                Serial.println("Triggered, going OUT");
                 triggerGate(1500);
                 device_found = false; // Reset device found, so it needs to be triggered again.
                 prev = 0;
@@ -367,7 +373,7 @@ void loop()
 
             if (state == 1 && gate_delay == true) // Assume state = 1 so I am outside.
             {
-                //Serial.println("Triggered, coming IN");
+                Serial.println("Triggered, coming IN");
                 triggerGate(1500);
                 device_found = false; // Reset device found, so it needs to be triggered again.
                 prev = 0;
@@ -439,9 +445,9 @@ void loop()
             {
                 linenumber = 0;
 //ENABLE FOR PRODUCTION BELOW
-//                 EEPROM.write(0, RSSI_CUSTOM_IN);
-//                 EEPROM.write(1, RSSI_CUSTOM_OUT);
-//                 EEPROM.commit();
+                 EEPROM.write(0, RSSI_CUSTOM_IN);
+                 EEPROM.write(1, RSSI_CUSTOM_OUT);
+                 EEPROM.commit();
                  Serial.println("State saved in flash memory:");
                  Serial.printf("Custom IN: %d\n", RSSI_CUSTOM_IN);
                  Serial.printf("Custom OUT: %d\n", RSSI_CUSTOM_OUT);
@@ -459,39 +465,6 @@ void loop()
 
 } // end of main loop
 
-// //Unused at the moment. For future Statistics work.
-// int median(int incomingData[], int dataCounter)
-// {
-//     //Takes a simple median of sample size 3.
-//     int a, b, c;
-//     a = incomingData[dataCounter - 2];
-//     b = incomingData[dataCounter - 1];
-//     c = incomingData[dataCounter];
-
-//     if (c > a && c > b) //c is biggest
-//     {
-//         if (a > b)
-//             return a; // a mid
-//         else
-//             return b; //b is mid
-//     }
-//     if (b > a && b > c) //b is biggest
-//     {
-//         if (a > c)
-//             return a; //a is mid
-//         else
-//             return c; //c is mid
-//     }
-//     if (a > b && a > c) //a is biggest
-//     {
-//         if (b > c)
-//             return b; //b is mid
-//         else
-//             return c; //c is mid
-//     }
-
-//     return 0;
-// }
 
 /* Functions Library: */
 void triggerGate(uint16_t delaytime)
@@ -505,20 +478,19 @@ void triggerGate(uint16_t delaytime)
 void wifi_init() /* Wifi Intialization - Runs Once. */
 {
 
-    //Must be rewritten to only flash light not trigger gate lol.
     digitalWrite(LED_BLE, LOW);
     digitalWrite(LED_WIFI, HIGH);
 
     myOLED.clrScr();
-    myOLED.print("BEGIN Wifi Mode lol", LEFT, 8);
-    myOLED.print("Custom RSSI IN:", LEFT, 24);
-    myOLED.printNumI(RSSI_CUSTOM_IN, RIGHT, 24);
-    myOLED.print("Custom RSSI OUT:", LEFT, 40);
-    myOLED.printNumI(RSSI_CUSTOM_OUT, RIGHT, 40);
+    //myOLED.print("Wifi Innit.", LEFT, 8);
+    myOLED.print("Wifi Initialize", CENTER, 24);
+    //myOLED.printNumI(RSSI_CUSTOM_IN, RIGHT, 24);
+    //myOLED.print("Custom RSSI OUT:", LEFT, 40);
+    //myOLED.printNumI(RSSI_CUSTOM_OUT, RIGHT, 40);
     myOLED.update();
 
     WiFi.softAP(ssid, password);
-    delay(2000); // Important so it doesn't crash... Probably
+    //delay(2000); // potential delay to avoid crashing.
     WiFi.softAPConfig(local_ip, gateway, subnet);
     gate_delay = false;
 
