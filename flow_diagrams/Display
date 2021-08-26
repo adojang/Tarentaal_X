@@ -1,20 +1,20 @@
-<mxfile host="app.diagrams.net" modified="2021-08-26T09:11:42.015Z" agent="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36" etag="nRdM_UFKML6WFAQwIQ2S" version="14.9.9" type="github">
+<mxfile host="app.diagrams.net" modified="2021-08-26T11:46:45.187Z" agent="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36" etag="bjEZS-MBhESHf2FQTJwD" version="14.9.9" type="github">
   <diagram id="gs1sPd8Sv_sMZu6URFer" name="Page-1">
-    <mxGraphModel dx="780" dy="735" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="2062" dy="801" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="VPwHlAcKcL2SQkAthm31-1" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#432D57;fontColor=#ffffff;fillColor=#022326;" vertex="1" parent="1">
+        <mxCell id="VPwHlAcKcL2SQkAthm31-1" value="" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#432D57;fontColor=#ffffff;fillColor=#022326;" parent="1" vertex="1">
           <mxGeometry x="270" y="250" width="370" height="180" as="geometry" />
         </mxCell>
-        <mxCell id="VPwHlAcKcL2SQkAthm31-2" value="RSSI Readings: -84 dB" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fontSize=25;fontColor=#FFFFFF;" vertex="1" parent="1">
-          <mxGeometry x="320" y="270" width="270" height="40" as="geometry" />
+        <mxCell id="VPwHlAcKcL2SQkAthm31-2" value="RSSI Raw: -84 dB" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fontSize=25;fontColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="345" y="270" width="220" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="VPwHlAcKcL2SQkAthm31-3" value="Distance Estimation: 1.453m" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fontSize=25;fontColor=#FFFFFF;" vertex="1" parent="1">
-          <mxGeometry x="300" y="320" width="330" height="40" as="geometry" />
+        <mxCell id="VPwHlAcKcL2SQkAthm31-3" value="Dist. Approx: 1.45m" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fontSize=25;fontColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="350" y="320" width="230" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="VPwHlAcKcL2SQkAthm31-4" value="Kalman Filter Approx: 1.945m" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fontSize=25;fontColor=#FFFFFF;" vertex="1" parent="1">
-          <mxGeometry x="285" y="370" width="340" height="40" as="geometry" />
+        <mxCell id="VPwHlAcKcL2SQkAthm31-4" value="Kalman Approx: 1.945m" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fontSize=25;fontColor=#FFFFFF;" parent="1" vertex="1">
+          <mxGeometry x="315" y="370" width="280" height="40" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
