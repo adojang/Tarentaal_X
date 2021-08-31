@@ -1,5 +1,5 @@
 #include <Arduino.h>
-
+#include "kalman.hpp"
 /* 
  *  BLE Bluetooth Beacon, Adapted from Arduino Examples and various other sources.
  *  Adriaan van Wijk
@@ -11,7 +11,9 @@
  *
  *  The Wifi Addition is meant to allow visitors to connect to the local AP and by accessing 192.168.1.25
  *  open and close the gate. Based on https://lastminuteengineers.com/creating-esp32-web-server-arduino-ide/
- *
+
+ *   Kalman filter comes from https://github.com/hmartiro/kalman-cpp
+ *   Eigen comes from https://gitlab.com/libeigen/eigen.git
  *  To Do:
  *
  * 
