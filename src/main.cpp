@@ -1,4 +1,18 @@
 #include <Arduino.h>
+
+/* #include <kalman/KalmanFilterBase.hpp>
+#include <kalman/SystemModel.hpp>
+#include <kalman/ExtendedKalmanFilter.hpp>
+
+#include <cmath>
+#include <iostream>
+#include <random>
+#include <chrono>
+*/
+
+#include <algorithm>
+#include <iostream>
+#include <vector>
 #include "kalman.hpp"
 /* 
  *  BLE Bluetooth Beacon, Adapted from Arduino Examples and various other sources.
@@ -81,7 +95,7 @@ uint8_t LED_TRIGGER = 16;
 uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Can Remove
 
-uint32_t scanTime = 1;    //Duration of each scan in seconds 2 1100 1099
+uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
 uint16_t interval = 100; //the intervals at which scanning is actively taking place in milliseconds
 uint16_t window = 100;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
@@ -102,6 +116,7 @@ int k;
 int prev = 0;
 int state = 0; // 0 - inside | 1 - outside
 int rssi = -111;
+int rssiprevious = -110;
 int keyrssi = -111;
 String ptr;
 String str;
@@ -109,7 +124,7 @@ String str3;
 BLEScan *pBLEScan; //ble pointer
 std::string addressReturn;
 
-unsigned long blescantime =0;
+unsigned long blescantime = 0;
 
 OLED myOLED(21, 22);
 extern uint8_t SmallFont[];
@@ -153,6 +168,27 @@ void IRAM_ATTR i_enter()
     b_enter.numberKeyPresses += 1;
 }
 
+/* Kalman Filter*/
+
+    int n = 2;       // Number of states
+    int m = 2;       // Number of measurements
+    double dt = 1.0; // Time step
+
+    Eigen::MatrixXd A(n, n); // System dynamics matrix
+    Eigen::MatrixXd C(m, n); // Output matrix
+    Eigen::MatrixXd Q(n, n); // Process noise covariance
+    Eigen::MatrixXd R(m, m); // Measurement noise covariance
+    Eigen::MatrixXd P(n, n); // Estimate error covariance
+
+    Eigen::VectorXd y(m); // Buffer for current and past value storage.
+
+    KalmanFilter  kf(dt, A, C, Q, R, P);
+
+    std::vector<int> rssi_hist = {0,0,0};
+
+
+/* ------------------------------------------- End of Constant Initialization --------------------------------------------- */
+
 /* BLE Function Code */
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
@@ -191,6 +227,54 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     }
 };
 
+
+void kalman_init()
+{
+    // Discrete LTI projectile motion, measuring position only
+    A << 0, 1, 0, 0;
+    C << 1, 0, 0, 0;
+
+    // Reasonable covariance matrices
+    R << 1, 0, 0, 1;
+    P << 5, 0, 0, 5;
+    Q << 0.1, 0.1, 0.1, 0.1;
+
+    std::cout << "A: \n"
+              << A << std::endl;
+    std::cout << "C: \n"
+              << C << std::endl;
+    std::cout << "R: \n"
+              << R << std::endl;
+    std::cout << "P: \n"
+              << P << std::endl;
+    std::cout << "Q: \n"
+              << Q << std::endl;
+
+
+    std::vector<double> measurements = {(double)rssi, (double)rssiprevious}; //Initialize with 111 and 110 respectively.
+    Eigen::VectorXd x0(n);
+    x0 << measurements[0], measurements[1];
+    kf.init(0, x0);
+
+    Serial.println("Finish Kalman Initialization");
+}
+
+int kalman_update(int current_rssi, int rssi_hist)
+{
+
+    //   std::cout << "t = " << 0 << ", "
+    //              << "x_hat[0]: " << kf.state().transpose() << std::endl;
+
+    y << -current_rssi, -rssi_hist;
+    kf.update(y);
+    std::cout << "Original: " << y.transpose()
+              << "\n Output: " << kf.state().transpose() << std::endl;
+
+    return (kf.state().transpose())[0];
+}
+
+
+
 void setup()
 {
     EEPROM.begin(2);
@@ -216,9 +300,9 @@ void setup()
     RSSI_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
     RSSI_CUSTOM_OUT = EEPROM.read(1);
 
-
-    if(!myOLED.begin(SSD1306_128X64))
-        while(1);   // In case the library failed to allocate enough RAM for the display buffer...
+    if (!myOLED.begin(SSD1306_128X64))
+        while (1)
+            ; // In case the library failed to allocate enough RAM for the display buffer...
     myOLED.setFont(SmallFont);
 
     /* BLE Initialization */
@@ -231,15 +315,73 @@ void setup()
     pBLEScan->setWindow(window);                                               // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
 
-    
+    //typedef float T;
+    //typedef Kalman::SystemModel<T> SystemModel;
+
+   
+
+    //std::default_random_engine generator;
+    //std::normal_distribution<float> noise(0, 1);
+    //noise(generator); // Genereate random Number
+
+    /*
+//    SystemModel sys;
+    typedef float T;
+    typedef Kalman::Vector<int,1> State;
+    typedef Kalman::SystemModel<int> SystemModel;
+    typedef Kalman::MeasurementModel<State,SystemModel> MeasurementModel;
+
+    State x;
+    SystemModel sys;
+
+    std::default_random_engine generator;
+    generator.seed( std::chrono::system_clock::now().time_since_epoch().count() );
+    std::normal_distribution<T> noise(0, 1);
+    Kalman::ExtendedKalmanFilter<State> predictor;
+
+    predictor.init(x);
+    x[0] = rssi;
+    auto x_pred = predictor.predict(sys,0);
+*/
+
     //Start WIFI and BLE simultaneously
     //Enable if you want Simultaneous BLE and Wifi.
     //wifi_init();
+    //kalman_init();
+}
 
+
+int mean(int current, int prev)
+{
+    return (current+prev)/2;
+}
+
+int medianx()
+{
+   
+    std::sort(rssi_hist.begin(), rssi_hist.end());
+
+    return rssi_hist[1];
 
 }
+
+void rssi_history()
+{
+    rssi_hist.pop_back();
+    rssi_hist.insert(rssi_hist.begin(), rssi);
+    
+    Serial.printf("Vector: %d, %d, %d", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
+
+    return;
+}
+
 void loop()
 {
+    
+    rssi_history();
+    Serial.println(medianx());
+    //kalman_update(rssi,rssiprevious);
+    rssiprevious = rssi;
     currenttime = millis();
     //Serial.println("Program Loop Start");
     //Time keeping function used to prevent multiple gate retriggers
@@ -289,7 +431,9 @@ void loop()
         delay(25);
         b_trigger.numberKeyPresses = 0;
     }
-    
+
+  
+
     if (!config_ble) /* Start of BLE Loop */
     {
         digitalWrite(LED_WIFI, LOW);
@@ -308,10 +452,10 @@ void loop()
         //Serial.println("BLE Loop Start");
 
         BLEScanResults foundDevices = pBLEScan->start(scanTime, false); // This Takes 1 Second.
-  
+
         //Needed if you want simultaneous wifi to work.
         //server.handleClient();
-       
+
         //Serial.println("BLE End Scanresults\n");
         //Serial.println(foundDevices.getCount());
 
@@ -328,7 +472,7 @@ void loop()
 
                 //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
                 //Serial.printf("%d\n", rssi);
-                
+
                 keyrssi = rssi;
                 //Serial.printf("RSSIA %d\n", rssi);
                 //Convert RSSI to Distance
@@ -446,27 +590,25 @@ void loop()
             if (b_enter.numberKeyPresses > 0)
             {
                 linenumber = 0;
-//ENABLE FOR PRODUCTION BELOW
-                 EEPROM.write(0, RSSI_CUSTOM_IN);
-                 EEPROM.write(1, RSSI_CUSTOM_OUT);
-                 EEPROM.commit();
-                 Serial.println("State saved in flash memory:");
-                 Serial.printf("Custom IN: %d\n", RSSI_CUSTOM_IN);
-                 Serial.printf("Custom OUT: %d\n", RSSI_CUSTOM_OUT);
+                //ENABLE FOR PRODUCTION BELOW
+                EEPROM.write(0, RSSI_CUSTOM_IN);
+                EEPROM.write(1, RSSI_CUSTOM_OUT);
+                EEPROM.commit();
+                Serial.println("State saved in flash memory:");
+                Serial.printf("Custom IN: %d\n", RSSI_CUSTOM_IN);
+                Serial.printf("Custom OUT: %d\n", RSSI_CUSTOM_OUT);
                 // Update OLED to show value has been saved.
-                 myOLED.clrScr();       
-                 myOLED.print("Custom Values Saved", CENTER, 24);
-                 myOLED.update();
-                 delay(2000); // To allow user to read message
-                 b_enter.numberKeyPresses = 0;
+                myOLED.clrScr();
+                myOLED.print("Custom Values Saved", CENTER, 24);
+                myOLED.update();
+                delay(2000); // To allow user to read message
+                b_enter.numberKeyPresses = 0;
             }
         }
-
     }
     
 
 } // end of main loop
-
 
 /* Functions Library: */
 void triggerGate(uint16_t delaytime)
@@ -477,6 +619,14 @@ void triggerGate(uint16_t delaytime)
     delay(delaytime);
     digitalWrite(LED_TRIGGER, LOW);
 }
+
+
+
+int test(int egg)
+{
+    return egg;
+}
+
 void wifi_init() /* Wifi Intialization - Runs Once. */
 {
 
