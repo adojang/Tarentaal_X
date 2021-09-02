@@ -47,7 +47,7 @@
 
 //Function Declearations
 
-int median(int incomingdata[], int dataCounter);
+//int median(int incomingdata[], int dataCounter);
 void wifi_init();
 void triggerGate(uint16_t delaytime);
 void handle_OnConnect();
@@ -118,6 +118,7 @@ int state = 0; // 0 - inside | 1 - outside
 int rssi = -111;
 int rssiprevious = -110;
 int keyrssi = -111;
+int med = -222;
 String ptr;
 String str;
 String str3;
@@ -170,22 +171,22 @@ void IRAM_ATTR i_enter()
 
 /* Kalman Filter*/
 
-    int n = 2;       // Number of states
-    int m = 2;       // Number of measurements
-    double dt = 1.0; // Time step
+int n = 2;       // Number of states
+int m = 2;       // Number of measurements
+double dt = 1.0; // Time step
 
-    Eigen::MatrixXd A(n, n); // System dynamics matrix
-    Eigen::MatrixXd C(m, n); // Output matrix
-    Eigen::MatrixXd Q(n, n); // Process noise covariance
-    Eigen::MatrixXd R(m, m); // Measurement noise covariance
-    Eigen::MatrixXd P(n, n); // Estimate error covariance
+Eigen::MatrixXd A(n, n); // System dynamics matrix
+Eigen::MatrixXd C(m, n); // Output matrix
+Eigen::MatrixXd Q(n, n); // Process noise covariance
+Eigen::MatrixXd R(m, m); // Measurement noise covariance
+Eigen::MatrixXd P(n, n); // Estimate error covariance
 
-    Eigen::VectorXd y(m); // Buffer for current and past value storage.
+Eigen::VectorXd y(m); // Buffer for current and past value storage.
 
-    KalmanFilter  kf(dt, A, C, Q, R, P);
+KalmanFilter kf(dt, A, C, Q, R, P);
 
-    std::vector<int> rssi_hist = {0,0,0};
-
+std::vector<int> rssi_hist{1, 1, 1, 1, 1};
+std::vector<int> hist_copy = rssi_hist;
 
 /* ------------------------------------------- End of Constant Initialization --------------------------------------------- */
 
@@ -227,7 +228,6 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
     }
 };
 
-
 void kalman_init()
 {
     // Discrete LTI projectile motion, measuring position only
@@ -250,7 +250,6 @@ void kalman_init()
     std::cout << "Q: \n"
               << Q << std::endl;
 
-
     std::vector<double> measurements = {(double)rssi, (double)rssiprevious}; //Initialize with 111 and 110 respectively.
     Eigen::VectorXd x0(n);
     x0 << measurements[0], measurements[1];
@@ -272,8 +271,6 @@ int kalman_update(int current_rssi, int rssi_hist)
 
     return (kf.state().transpose())[0];
 }
-
-
 
 void setup()
 {
@@ -318,8 +315,6 @@ void setup()
     //typedef float T;
     //typedef Kalman::SystemModel<T> SystemModel;
 
-   
-
     //std::default_random_engine generator;
     //std::normal_distribution<float> noise(0, 1);
     //noise(generator); // Genereate random Number
@@ -350,42 +345,46 @@ void setup()
     //kalman_init();
 }
 
-
 int mean(int current, int prev)
 {
-    return (current+prev)/2;
+    return (current + prev) / 2;
 }
 
-int medianx()
+int median()
 {
-   
-    std::sort(rssi_hist.begin(), rssi_hist.end());
-
-    return rssi_hist[1];
-
-}
-
-void rssi_history()
-{
+    //Add newest RSSI, discard oldest.
     rssi_hist.pop_back();
-    rssi_hist.insert(rssi_hist.begin(), rssi);
-    
-    Serial.printf("Vector: %d, %d, %d", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
+    // Serial.printf("Vector: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
+    rssi_hist.insert((rssi_hist.begin()), rssi);
+    //for(std::size_t i = 0; i < rssi_hist.size(); ++i) {
+    //std::cout << rssi_hist[i] << "\n";
+    //}
 
-    return;
+    hist_copy = rssi_hist;
+    std::sort(hist_copy.begin(), hist_copy.end()); //Sort from most negative to least negative. ie: {-111, -110, -100}
+    // for(std::size_t i = 0; i < hist_copy.size(); ++i) {
+    //std::cout << hist_copy[i] << "\n";
+    //}
+
+    //Serial.printf("Sorted: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
+    return hist_copy[2]; //Return middle value.
 }
 
 void loop()
 {
-    
-    rssi_history();
-    Serial.println(medianx());
-    //kalman_update(rssi,rssiprevious);
+    /* Update Previous Values */
+    med = median();
     rssiprevious = rssi;
     currenttime = millis();
-    //Serial.println("Program Loop Start");
-    //Time keeping function used to prevent multiple gate retriggers
-    if (currenttime - previoustime >= time_delay)
+    //kalman_update(rssi,rssiprevious);
+
+    
+    /* Line for Plotting */
+    Serial.printf("%d,%d\n",(int8_t)(rssi), (int8_t)(med)); //rssi and median
+
+
+    /*Time keeping function used to prevent multiple gate retriggers */
+    if (currenttime - previoustime >= time_delay) // time delay is 15 sec ideally.
     {
         previoustime = currenttime;
         gate_delay = true;
@@ -432,8 +431,6 @@ void loop()
         b_trigger.numberKeyPresses = 0;
     }
 
-  
-
     if (!config_ble) /* Start of BLE Loop */
     {
         digitalWrite(LED_WIFI, LOW);
@@ -445,7 +442,8 @@ void loop()
         myOLED.printNumI(keyrssi, RIGHT, 8);
         myOLED.print("Algebraic Dist:", LEFT, 24);
         myOLED.printNumF(distance, 3, RIGHT, 24); // 0.123
-        myOLED.print("Kalmann Filter:", LEFT, 40);
+        myOLED.print("Median:", LEFT, 40);
+        myOLED.printNumI(med, RIGHT, 40);
         myOLED.update();
 
         //BLE Functionality
@@ -467,7 +465,7 @@ void loop()
             if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0) // Restricts to only KNOWN mac addresses. 0 when identical.
             {
                 /*BLE Beacon has been found and is within range. */
-                Serial.println(millis() - blescantime); // The time between sucessive updates
+                //Serial.println(millis() - blescantime); // The time between sucessive updates
                 blescantime = millis();
 
                 //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
@@ -606,7 +604,6 @@ void loop()
             }
         }
     }
-    
 
 } // end of main loop
 
@@ -620,12 +617,6 @@ void triggerGate(uint16_t delaytime)
     digitalWrite(LED_TRIGGER, LOW);
 }
 
-
-
-int test(int egg)
-{
-    return egg;
-}
 
 void wifi_init() /* Wifi Intialization - Runs Once. */
 {
