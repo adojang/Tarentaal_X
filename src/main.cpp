@@ -1,34 +1,36 @@
-#include <Arduino.h>
+#include "Arduino.h"
 
 /* #include <kalman/KalmanFilterBase.hpp>
 #include <kalman/SystemModel.hpp>
-#include <kalman/Ex_predicttendedKalmanFilter.hpp>
+#include <kalman/ExtendedKalmanFilter.hpp>
 
 #include <cmath>
 #include <iostream>
 #include <random>
 #include <chrono>
 */
+#include <Husarnet.h>
 #include <cmath>
 #include <algorithm>
 #include <iostream>
 #include <vector>
 //#include "kalman.hpp"
 /* 
- *  BLE Bluetooth Beacon, Adapted from Arduino Ex_predictamples and various other sources.
+ *  BLE Bluetooth Beacon, Adapted from Arduino Examples and various other sources.
  *  Adriaan van Wijk
  *  2021
  *  Additional Libraries by Rinky-Dink (OLED) and the guy who wrote the BLE one.
  *  This program is meant for a ESP32 board which will search for BLE devices. It then matches a BLE device
  *  with a set of known MAC address (or other identifiable data) and if it matches, and is in range, will function as
- *  a trigger that can allow other applications, such as opening a gate, for ex_predictample.
+ *  a trigger that can allow other applications, such as opening a gate, for example.
  *
  *  The Wifi Addition is meant to allow visitors to connect to the local AP and by accessing 192.168.1.25
  *  open and close the gate. Based on https://lastminuteengineers.com/creating-esp32-web-server-arduino-ide/
 
  *   Kalman filter comes from https://github.com/hmartiro/kalman-cpp
  *   Eigen comes from https://gitlab.com/libeigen/eigen.git
- *  To Do:
+ *   Web Integration Thanks to HusarNet and https://www.hackster.io/donowak/internet-controlled-led-strip-using-esp32-arduino-2ca8a9
+ * 
  *
  * 
  * 
@@ -47,25 +49,39 @@
 
 //Function Declearations
 
+
+const char* hostName = "tarentaal";  
+const char* husarnetJoinCode = "fc94:b01d:1803:8dd8:b293:5c7d:7639:932a/wKrHCwZGrVdpHiDqS7twpf";
+const char* dashboardURL = "default";
+
+
+
+
+
+
+
+
+
+
 //int median(int incomingdata[], int dataCounter);
 void wifi_init();
 void triggerGate(uint16_t delaytime);
 void handle_OnConnect();
 void handle_sendrssi();
 void handle_toggleGate();
-void handle_ex_predictitconfig();
+void handle_exitconfig();
 void handle_NotFound();
 String SendHTML(uint8_t active);
 String refreshpageHTML();
 
 /* Put your SSID & Password */
-const char *ssid = "Tarentaal";        // Enter SSID here
-const char *password = "birdsfordays"; //Enter Password here
+const char *ssid = "Graves Into Gardens";        // Enter SSID here
+const char *password = "throughchristalone"; //Enter Password here
 
 /* Put IP Address details */
-IPAddress local_ip(192, 168, 1, 25);
-IPAddress gateway(192, 168, 1, 25);
-IPAddress subnet(255, 255, 255, 0);
+//IPAddress local_ip(10, 1, 1, 1);
+//IPAddress gateway(10, 10, 10, 1);
+//IPAddress subnet(255, 255, 255, 0);
 WebServer server(80);
 
 /* Enter Known BLE Device Mac Addresses */
@@ -177,11 +193,11 @@ int n = 2;       // Number of states
 int m = 2;       // Number of measurements
 double dt = 1.0; // Time step
 
-Eigen::Matrix_predictXd A(n, n); // System dynamics matrix_predict
-Eigen::Matrix_predictXd C(m, n); // Output matrix_predict
-Eigen::Matrix_predictXd Q(n, n); // Process noise covariance
-Eigen::Matrix_predictXd R(m, m); // Measurement noise covariance
-Eigen::Matrix_predictXd P(n, n); // Estimate error covariance
+Eigen::MatrixXd A(n, n); // System dynamics matrix
+Eigen::MatrixXd C(m, n); // Output matrix
+Eigen::MatrixXd Q(n, n); // Process noise covariance
+Eigen::MatrixXd R(m, m); // Measurement noise covariance
+Eigen::MatrixXd P(n, n); // Estimate error covariance
 
 Eigen::VectorXd y(m); // Buffer for current and past value storage.
 
@@ -204,7 +220,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         {
             //Compare Each incoming signal with my code above and if it matches, set a flag that the key is within range.
             str = advertisedDevice.toString().c_str();
-            //pos = str.index_predictOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
+            //pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
             //This was when I was still analyzing hte whole string and doing needless work...
             //str3 = str.substring(pos + 9, pos + 26);
             //Serial.println("In Loop...");
@@ -254,9 +270,9 @@ void kalman_init()
               << Q << std::endl;
 
     std::vector<double> measurements = {(double)rssi, (double)rssiprevious}; //Initialize with 111 and 110 respectively.
-    Eigen::VectorXd x_predict0(n);
-    x_predict0 << measurements[0], measurements[1];
-    kf.init(0, x_predict0);
+    Eigen::VectorXd x0(n);
+    x0 << measurements[0], measurements[1];
+    kf.init(0, x0);
 
     Serial.println("Finish Kalman Initialization");
 }
@@ -265,7 +281,7 @@ int kalman_update(int current_rssi, int rssi_hist)
 {
 
     //   std::cout << "t = " << 0 << ", "
-    //              << "x_predict_hat[0]: " << kf.state().transpose() << std::endl;
+    //              << "x_hat[0]: " << kf.state().transpose() << std::endl;
 
     y << -current_rssi, -rssi_hist;
     kf.update(y);
@@ -329,17 +345,17 @@ void setup()
     typedef Kalman::SystemModel<int> SystemModel;
     typedef Kalman::MeasurementModel<State,SystemModel> MeasurementModel;
 
-    State x_predict;
+    State x;
     SystemModel sys;
 
     std::default_random_engine generator;
     generator.seed( std::chrono::system_clock::now().time_since_epoch().count() );
     std::normal_distribution<T> noise(0, 1);
-    Kalman::Ex_predicttendedKalmanFilter<State> predictor;
+    Kalman::ExtendedKalmanFilter<State> predictor;
 
-    predictor.init(x_predict);
-    x_predict[0] = rssi;
-    auto x_predict_pred = predictor.predict(sys,0);
+    predictor.init(x);
+    x[0] = rssi;
+    auto x_pred = predictor.predict(sys,0);
 */
 
     //Start WIFI and BLE simultaneously
@@ -422,18 +438,18 @@ int kalvin()
 {
     int k;
     //Runs through the whole rssi_hist buffer and tries to calculate the 'true' value.
-    std::vector<float> p_predict{0, 0, 0, 0, 0,0,0,0};
+    std::vector<float> p{0, 0, 0, 0, 0,0,0,0};
     std::vector<float> p_update{0, 0, 0, 0, 0};
-    std::vector<float> x_predict{0, 0, 0, 0, 0,0,0,0};
+    std::vector<float> x{0, 0, 0, 0, 0,0,0,0};
     std::vector<float> x_update{0, 0, 0, 0, 0};
     
-    x_predict[0]  = rssi; // Our Estimate of the RSSI
-    p_predict[0] = 15*15; //How uncertain we are in our predictions
+    x[0]  = rssi; // Our Estimate of the RSSI
+    p[0] = 15*15; //How uncertain we are in our predictions
     int q = 0.005;
     
     /* Setup */
-    p_predict[1] = p_predict[0] + q;
-    x_predict[1] = x_predict[0];
+    p[1] = p[0] + q;
+    x[1] = x[0];
     
     
     int r_1 = 15*15; // The measurement error squared. In RSSI.
@@ -444,38 +460,38 @@ int kalvin()
     
     for (k = 0; k < 5; k++)
     {
-        //Serial.printf("Iteration %d, Predict: %f\n",k,x_predict[k+3]);
+        //Serial.printf("Iteration %d, Predict: %f\n",k,x[k+3]);
         
         // Step 2 - Update -
-        K_gain = p_predict[k+1] / (p_predict[k+1] + r_1);
+        K_gain = p[k+1] / (p[k+1] + r_1);
         //Serial.printf("Iteration %d, K: %f\n",k,K_gain);
-        x_update[k] = x_predict[k + 1] + K_gain * (rssi_hist[k] - x_predict[k + 1]);
+        x_update[k] = x[k + 1] + K_gain * (rssi_hist[k] - x[k + 1]);
         //Serial.printf("Iteration %d, x_update %f\n",k,x_update[k]);
-        p_update[k] = (1 - K_gain) * p_predict[k + 1];
+        p_update[k] = (1 - K_gain) * p[k + 1];
         //Serial.printf("Iteration %d, p_update %f\n",k,p_update[k]);
 
         // Step 3 - Predict - 
-        x_predict[k + 2] = x_update[k];
-        p_predict[k + 2] = p_update[k] + q;
-        //Serial.printf("Iteration %d, Predict: %f\n",k,x_predict[k+2]);
+        x[k + 2] = x_update[k];
+        p[k + 2] = p_update[k] + q;
+        //Serial.printf("Iteration %d, Predict: %f\n",k,x[k+2]);
         
     }
     
     
-    return (int8_t)(x_predict[6]);
+    return (int8_t)(x[6]);
     //return 1;
 }
 
 void loop()
 {
     /* Update Previous Values */
-    med = median();
-    sor = SDOR();
+    //med = median();
+    //sor = SDOR();
     //History of Median Output Measurements.
     rssi_med.pop_back();
     rssi_med.insert((rssi_med.begin()), med);
 
-    kal = kalvin();
+    //kal = kalvin();
 
 
     rssiprevious = rssi;
@@ -484,7 +500,7 @@ void loop()
 
     
     /* Line for Plotting */
-    Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
+    //Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
 
 
     /*Time keeping function used to prevent multiple gate retriggers */
@@ -494,7 +510,7 @@ void loop()
         gate_delay = true;
     }
 
-    /* Prox_predictimity Based Config Trigger */
+    /* Proximity Based Config Trigger */
     if (configcounter >= 2) // 2 Is arbitrary, can be more
     {
 
@@ -504,7 +520,7 @@ void loop()
         wifibool = false;
     }
 
-    /* Ex_predictit BLE Mode, Start Wifi */
+    /* Exit BLE Mode, Start Wifi */
     if ((b_config.numberKeyPresses > 0) && (!config_ble))
     {
         Serial.println("Config Button Pushed, Disable BLE\n");
@@ -515,7 +531,7 @@ void loop()
         b_config.numberKeyPresses = 0;
     }
 
-    /* Ex_predictit Wifi Mode, Return to BLE */
+    /* Exit Wifi Mode, Return to BLE */
     if ((b_config.numberKeyPresses > 0) && (config_ble))
     {
         digitalWrite(LED_BLE, HIGH);
@@ -590,7 +606,7 @@ void loop()
                 temp = -70 - rssi;
                 temp = temp / 40; // The 40 is arbitrary and must be tuned.
                 distance = pow(10, temp);
-                //Serial.printf("Algebriac Distance of Key is (Approx_predict) %f m \n", distance);
+                //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
 
                 //Serial.printf("%f,\n", (double)rssi);
                 //Serial.printf("%f\n", distance);
@@ -744,15 +760,30 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     //myOLED.printNumI(RSSI_CUSTOM_OUT, RIGHT, 40);
     myOLED.update();
 
-    WiFi.softAP(ssid, password);
-    //delay(2000); // potential delay to avoid crashing.
-    WiFi.softAPConfig(local_ip, gateway, subnet);
+    //WiFi.softAP(ssid, password);
+    //WiFi.softAPConfig(local_ip, gateway, subnet);
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        delay(1000);
+        Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("WiFi connected..!");
+    Serial.print("Got IP: ");  Serial.println(WiFi.localIP());
+    
     gate_delay = false;
+    delay(150); // potential delay to avoid crashing.
+
+    //Husarnet to allow for internet CLI
+    //Husarnet.selfHostedSetup(dashboardURL);
+    //Husarnet.join(husarnetJoinCode, hostName);
+    //Husarnet.start();
 
     /* WebServer Command Structure */
     server.on("/", handle_OnConnect);
     server.on("/toggle", handle_toggleGate);
-    server.on("/ex_predictitconfig", handle_ex_predictitconfig);
+    server.on("/exitconfig", handle_exitconfig);
     server.on("/sendrssi", HTTP_POST, handle_sendrssi);
     server.onNotFound(handle_NotFound);
     server.begin();
@@ -764,7 +795,7 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
 
 void handle_OnConnect()
 {
-    server.send(200, "tex_predictt/html", SendHTML(LOW)); //Not Active
+    server.send(200, "text/html", SendHTML(LOW)); //Not Active
     digitalWrite(LED_TRIGGER, LOW);               // lol why is this here
 }
 
@@ -783,21 +814,21 @@ void handle_sendrssi()
     Serial.println("State saved in flash memory:");
     Serial.printf("Custom IN: %d\n", RSSI_CUSTOM_IN);
     Serial.printf("Custom OUT: %d\n", RSSI_CUSTOM_OUT);
-    server.send(200, "tex_predictt/html", refreshpageHTML());
+    server.send(200, "text/html", refreshpageHTML());
 }
 
 void handle_toggleGate()
 {
     digitalWrite(LED_TRIGGER, HIGH);
-    server.send(200, "tex_predictt/html", SendHTML(HIGH)); //Active
+    server.send(200, "text/html", SendHTML(HIGH)); //Active
     delay(1500);
     handle_OnConnect();
 }
 
-void handle_ex_predictitconfig()
+void handle_exitconfig()
 {
     //Put a cute disconnect loading page here that delays a bit before disconnecting
-    server.send(200, "tex_predictt/plain", "Note to self: Remember to create the page that tells people the router is saving and quitting... :)");
+    server.send(200, "text/plain", "Note to self: Remember to create the page that tells people the router is saving and quitting... :)");
     Serial.println("\nDisconnecting from AP now");
     WiFi.softAPdisconnect(true);
     config_ble = false;
@@ -805,7 +836,7 @@ void handle_ex_predictitconfig()
 
 void handle_NotFound()
 {
-    server.send(404, "tex_predictt/plain", "Not found. Are you sure you have the right fishtank?");
+    server.send(404, "text/plain", "Not found. Are you sure you have the right fishtank?");
 }
 
 /* Web Page Design */
@@ -816,10 +847,10 @@ String SendHTML(uint8_t active)
     ptr = "<!DOCTYPE html> <html>\n";
     ptr += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
     ptr += "<title>Gate Control</title>\n";
-    ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px_predict auto; tex_predictt-align: center;}\n";
-    ptr += "body{margin-top: 50px_predict;} h1 {color: #444444;margin: 50px_predict auto 30px_predict;} h3 {color: #444444;margin-bottom: 50px_predict;}\n";
-    ptr += ".button {display: block;width: 80px_predict;background-color: #3498db;border: none;color: white;padding: 13px_predict 30px_predict;tex_predictt-decoration: none;font-size: 25px_predict;margin: 0px_predict auto 35px_predict;cursor: pointer;border-radius: 4px_predict;}\n";
-    ptr += ".buttonsmall {display: block;width: 80px_predict;background-color: #3498db;border: none;color: white;padding: 13px_predict 30px_predict;tex_predictt-decoration: none;font-size: 18px_predict;margin: 0px_predict auto 35px_predict;cursor: pointer;border-radius: 4px_predict;}\n";
+    ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+    ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+    ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+    ptr += ".buttonsmall {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 18px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
 
     ptr += ".button-on {background-color: #d74242;}\n";
     ptr += ".button-on:active {background-color: #d74242;}\n";
@@ -827,7 +858,7 @@ String SendHTML(uint8_t active)
     ptr += ".button-off:active {background-color: #2c3e50;}\n";
     ptr += ".button-save {background-color: #429bd7;}\n";
 
-    ptr += "p_predict {font-size: 14px_predict;color: #888;margin-bottom: 10px_predict;}\n";
+    ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
     ptr += "</style>\n";
 
     if (active)
@@ -842,15 +873,15 @@ String SendHTML(uint8_t active)
     /* Toggle Gate*/
     if (active)
     {
-        ptr += "<p_predict>Pushing Button</p_predict><a class=\"button button-off\" href=\"/\">Gate Opening</a>\n";
+        ptr += "<p>Pushing Button</p><a class=\"button button-off\" href=\"/\">Gate Opening</a>\n";
     }
     else
     {
-        ptr += "<p_predict>Button Released</p_predict><a class=\"button button-on\" href=\"/toggle\">Toggle Gate</a>\n";
+        ptr += "<p>Button Released</p><a class=\"button button-on\" href=\"/toggle\">Toggle Gate</a>\n";
     }
 
     /*Save and Quit*/
-    ptr += "<a class=\"buttonsmall button-save\" href=\"/ex_predictitconfig\">Save Settings and Quit</a>\n";
+    ptr += "<a class=\"buttonsmall button-save\" href=\"/exitconfig\">Save Settings and Quit</a>\n";
 
     /* Form and Button Part*/
     ptr += "<form action=\"/sendrssi\" method=\"POST\"><input type = \"number\" name = \"custom_in\" placeholder = \"Custom RSSI coming in\"><br>";
@@ -872,16 +903,16 @@ String refreshpageHTML()
     ptr = "<!DOCTYPE html> <html>\n";
     ptr += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
     ptr += "<title>Gate Control</title>\n";
-    ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px_predict auto; tex_predictt-align: center; vertical-align: middle;}\n";
-    ptr += "body{margin-top: 50px_predict;} h1 {color: #444444;margin: 50px_predict auto 30px_predict;} h3 {color: #444444;margin-bottom: 50px_predict;}\n";
-    ptr += ".button {display: block;width: 80px_predict;background-color: #3498db;border: none;color: white;padding: 13px_predict 30px_predict;tex_predictt-decoration: none;font-size: 25px_predict;margin: 0px_predict auto 35px_predict;cursor: pointer;border-radius: 4px_predict;}\n";
-    ptr += ".buttonsmall {display: block;width: 80px_predict;background-color: #3498db;border: none;color: white;padding: 13px_predict 30px_predict;tex_predictt-decoration: none;font-size: 18px_predict;margin: 0px_predict auto 35px_predict;cursor: pointer;border-radius: 4px_predict;}\n";
+    ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center; vertical-align: middle;}\n";
+    ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+    ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+    ptr += ".buttonsmall {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 18px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
     ptr += ".button-on {background-color: #d74242;}\n";
     ptr += ".button-on:active {background-color: #d74242;}\n";
     ptr += ".button-off {background-color: #852b2b;}\n";
     ptr += ".button-off:active {background-color: #2c3e50;}\n";
     ptr += ".button-save {background-color: #429bd7;}\n";
-    ptr += "p_predict {font-size: 14px_predict;color: #888;margin-bottom: 10px_predict;}\n";
+    ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
     ptr += "</style>\n";
 
     ptr += "<meta http-equiv='refresh' content='2;url=/'>\n";
