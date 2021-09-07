@@ -111,10 +111,11 @@ uint8_t LED_TRIGGER = 16;
 uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Can Remove
 
-uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 100; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 100;   //the window of time after each interval which is being scanned in milliseconds
+uint32_t scanTime = 2;   //Duration of each scan in seconds 2 1100 1099
+uint16_t interval = 2000; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 1999;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
+//Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
 
 double distance = 0;
@@ -205,7 +206,7 @@ KalmanFilter kf(dt, A, C, Q, R, P);
 */
 std::vector<int> rssi_hist{1, 1, 1, 1, 1};
 std::vector<int> rssi_med{-1, -1, -1, -1, -1};
-std::vector<int> hist_copy = rssi_hist;
+
 
 /* ------------------------------------------- End of Constant Initialization --------------------------------------------- */
 
@@ -228,7 +229,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
             if ((strcmp(addressReturn.c_str(), knownBLEAddresses[i].c_str()) == 0))
             {
-                //    Serial.println("Device MATCHES");
+                    Serial.printf("Device MATCHES %d\n", rssi);
                 //    Serial.println("THERE IS A MATCHHHHHHHHHHHHHH\n");
                 //    Serial.println(str3.c_str());
                 //    Serial.println(knownBLEAddresses[i].c_str());
@@ -376,9 +377,8 @@ int meanx()
     return (sum) /rssi_hist.size();
 }
 
-int SDOR()
+int SDOR(std::vector<int> hist_SDOR)
 {
-    std::vector<int> hist2 = rssi_hist;
     //Calculate mean
     int mean = meanx();
 
@@ -387,17 +387,21 @@ int SDOR()
     float sum =0;
     for(k=0;k<5;k++)
     {
-        sum += (pow(abs(hist2[k] - mean),2));   
+        //Serial.printf("hist_SDOR [%d]: %d\n", k, hist_SDOR[k]);
+        sum += (pow(abs(hist_SDOR[k] - mean),2));
+        //Serial.println(sum);   
     }
     int SD = sqrt(sum/5);
-    Serial.printf("SD: %d\n", SD);
+    //Serial.printf("SD: %d\n", SD);
     //Remove bad elements
-     for(k=0;k<5;k++)
+    int limit =5;
+     for(k=0;k<limit;k++)
     {
-          if (hist2[k] < (mean - 2*SD))
+          if ((hist_SDOR[k] < (mean - 2*SD)))
           {
-              hist2.erase(hist2.begin()+k);
-              Serial.printf("Erase:%d, %d\n", hist2[k],(mean-2*SD));
+              hist_SDOR.erase(hist_SDOR.begin()+k);
+              //Serial.printf("Erase:%d, %d\n", hist_SDOR[k],(mean-2*SD));
+              limit = limit -1; //This prevents trying to access bad memory
           }
     }
 
@@ -406,35 +410,34 @@ int SDOR()
     sum =0;
     for(k=0;k<5;k++)
     {
-        sum += hist2[k];    
+        sum += hist_SDOR[k];    
     }
-    //Return 0.25*avg + 0.75*rssi_current
 
 
-    return 0.25*(sum/(hist2.size())) + rssi*0.75;
+    return 0.25*(sum/(hist_SDOR.size())) + rssi*0.75;
 }
 
-int median()
+int median(std::vector<int> hist_med) // Calculates the median of rssi_hist, returns median, and stores history in med_hist
 {
     //Add newest RSSI, discard oldest.
-    rssi_hist.pop_back();
-    // Serial.printf("Vector: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
-    rssi_hist.insert((rssi_hist.begin()), rssi);
     //for(std::size_t i = 0; i < rssi_hist.size(); ++i) {
     //std::cout << rssi_hist[i] << "\n";
     //}
 
-    hist_copy = rssi_hist;
-    std::sort(hist_copy.begin(), hist_copy.end()); //Sort from most negative to least negative. ie: {-111, -110, -100}
-    // for(std::size_t i = 0; i < hist_copy.size(); ++i) {
-    //std::cout << hist_copy[i] << "\n";
+    std::sort(hist_med.begin(), hist_med.end()); //Sort from most negative to least negative. ie: {-111, -110, -100}
+    // for(std::size_t i = 0; i < hist_med.size(); ++i) {
+    //std::cout << hist_med[i] << "\n";
     //}
 
     //Serial.printf("Sorted: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
-    return hist_copy[2]; //Return middle value.
+    //Update Med History
+    rssi_med.pop_back();
+    rssi_med.insert((rssi_med.begin()), hist_med[2]);
+
+    return hist_med[2]; //Return middle value.
 }
 
-int kalvin()
+int kalvin(std::vector<int> hist_kal)
 {
     int k;
     //Runs through the whole rssi_hist buffer and tries to calculate the 'true' value.
@@ -443,7 +446,7 @@ int kalvin()
     std::vector<float> x{0, 0, 0, 0, 0,0,0,0};
     std::vector<float> x_update{0, 0, 0, 0, 0};
     
-    x[0]  = rssi; // Our Estimate of the RSSI
+    x[0]  = keyrssi; // Our Estimate of the RSSI
     p[0] = 15*15; //How uncertain we are in our predictions
     int q = 0.005;
     
@@ -465,7 +468,7 @@ int kalvin()
         // Step 2 - Update -
         K_gain = p[k+1] / (p[k+1] + r_1);
         //Serial.printf("Iteration %d, K: %f\n",k,K_gain);
-        x_update[k] = x[k + 1] + K_gain * (rssi_hist[k] - x[k + 1]);
+        x_update[k] = x[k + 1] + K_gain * (hist_kal[k] - x[k + 1]);
         //Serial.printf("Iteration %d, x_update %f\n",k,x_update[k]);
         p_update[k] = (1 - K_gain) * p[k + 1];
         //Serial.printf("Iteration %d, p_update %f\n",k,p_update[k]);
@@ -482,16 +485,25 @@ int kalvin()
     //return 1;
 }
 
+void hist_update(int keyrssi)
+{
+    rssi_hist.pop_back();
+    rssi_hist.insert((rssi_hist.begin()), keyrssi);
+    return;
+}
+
 void loop()
 {
-    /* Update Previous Values */
-    //med = median();
-    //sor = SDOR();
+    //Serial.printf("Before Functions: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
+    hist_update(keyrssi); //Update history of past keyrssi values
+    med = median(rssi_hist); //Calculates the median of rssi_hist, returns median, and stores history in med_hist
+    sor = SDOR(rssi_hist);
+    kal = kalvin(rssi_hist);
+   
     //History of Median Output Measurements.
-    rssi_med.pop_back();
-    rssi_med.insert((rssi_med.begin()), med);
+     Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
 
-    //kal = kalvin();
+    
 
 
     rssiprevious = rssi;
@@ -501,7 +513,7 @@ void loop()
     
     /* Line for Plotting */
     //Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
-
+    //Serial.printf("%d,%d\n",(int8_t)(rssi), (int8_t)(med)); //rssi and median
 
     /*Time keeping function used to prevent multiple gate retriggers */
     if (currenttime - previoustime >= time_delay) // time delay is 15 sec ideally.
@@ -556,22 +568,22 @@ void loop()
         digitalWrite(LED_WIFI, LOW);
         digitalWrite(LED_BLE, HIGH);
 
-        temp = -70 - med;
-        temp = temp / 40; // The 40 is arbitrary and must be tuned.
-        float med_dist = pow(10, temp);
+        //temp = -70 - med;
+        //temp = temp / 40; // The 40 is arbitrary and must be tuned.
+        //float med_dist = pow(10, temp);
 
-        temp = -70 - kal;
-        temp = temp / 40; // The 40 is arbitrary and must be tuned.
-        float kal_dist = pow(10, temp);
+        //temp = -70 - kal;
+       // temp = temp / 40; // The 40 is arbitrary and must be tuned.
+        //float kal_dist = pow(10, temp);
 
         /* OLED DISPLAY UPDATE */
         myOLED.clrScr();
         myOLED.print("Algebraic Dist:", LEFT, 8);
         myOLED.printNumF(distance, 3, RIGHT, 8);
-        myOLED.print("Med Dist:", LEFT, 24);
-        myOLED.printNumF(med_dist, 3, RIGHT, 24); // 0.123
+        myOLED.print("Med RSSI:", LEFT, 24);
+        myOLED.printNumF(med, 3, RIGHT, 24); // 0.123
         myOLED.print("Kal Dist::", LEFT, 40);
-        myOLED.printNumF(kal_dist, 3, RIGHT, 40);
+        //myOLED.printNumF(kal_dist, 3, RIGHT, 40);
         myOLED.update();
 
         //BLE Functionality
@@ -593,19 +605,24 @@ void loop()
             if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0) // Restricts to only KNOWN mac addresses. 0 when identical.
             {
                 /*BLE Beacon has been found and is within range. */
+                
+                
                 //Serial.println(millis() - blescantime); // The time between sucessive updates
+                
+                
+                
                 blescantime = millis();
 
-                //Serial.printf("Key found, rssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
+                //Serial.printf("Key found, keyrssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
                 //Serial.printf("%d\n", rssi);
 
                 keyrssi = rssi;
                 //Serial.printf("RSSIA %d\n", rssi);
                 //Convert RSSI to Distance
                 // Source : https://iotandelectronics.wordpress.com/2016/10/07/how-to-calculate-distance-from-the-rssi-value-of-the-ble-beacon/
-                temp = -70 - rssi;
-                temp = temp / 40; // The 40 is arbitrary and must be tuned.
-                distance = pow(10, temp);
+                //temp = -70 - rssi;
+                //temp = temp / 40; // The 40 is arbitrary and must be tuned.
+                //distance = pow(10, temp);
                 //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
 
                 //Serial.printf("%f,\n", (double)rssi);
@@ -615,12 +632,21 @@ void loop()
                 //Serial.write("%d",(int16_t)distance);
             }
 
-            if ((rssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
+            //Temp fix. 
+            //RSSI_THRESHOLD = -RSSI_CUSTOM_OUT;
+            //Serial.printf("Med: %d, Thresh: %d\n", med, RSSI_THRESHOLD);
+            //Serial.printf("Device found: %d", (device_found == true));
+            //Serial.println((strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0));
+
+
+
+            if ((keyrssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
+           // if ((med > RSSI_THRESHOLD))
             {
                 prev = 1; // Light was turned on previously in this loop
                 Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
             }
-            if ((rssi > RSSI_CONFIG) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
+            if ((keyrssi > RSSI_CONFIG) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
             {
                 configcounter++;
                 Serial.printf("Config Counter: %d\n", configcounter);
@@ -642,7 +668,7 @@ void loop()
                 RSSI_THRESHOLD = -RSSI_CUSTOM_OUT;
                 gate_delay = false;
             }
-
+            
             if (state == 1 && gate_delay == true) // Assume state = 1 so I am outside.
             {
                 Serial.println("Triggered, coming IN");
