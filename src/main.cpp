@@ -9,7 +9,7 @@
 #include <random>
 #include <chrono>
 */
-#include <Husarnet.h>
+//#include <Husarnet.h>
 #include <cmath>
 #include <algorithm>
 #include <iostream>
@@ -49,11 +49,11 @@
 
 //Function Declearations
 
-
+/*
 const char* hostName = "tarentaal";  
 const char* husarnetJoinCode = "fc94:b01d:1803:8dd8:b293:5c7d:7639:932a/wKrHCwZGrVdpHiDqS7twpf";
 const char* dashboardURL = "default";
-
+*/
 
 
 //int median(int incomingdata[], int dataCounter);
@@ -112,10 +112,10 @@ uint16_t window = 1000;   //the window of time after each interval which is bein
 uint16_t configcounter = 0;
 
 double distance = 0;
-double temp = -1;
+float kal_dist =0;
 
 unsigned long previoustime = 0;
-const long time_delay = 1000; // Ideally 15 sec, in ms.
+const long time_delay = 20000; // Ideally 15 sec, in ms.
 unsigned long currenttime;
 int pos = 0;
 int scannumber = 0;
@@ -125,12 +125,12 @@ int incomingData[50] = {0};
 int k;
 int prev = 0;
 int state = 0; // 0 - inside | 1 - outside
-int rssi = -111;
-int rssiprevious = -110;
-int keyrssi = -111;
-int med =0;
-int kal =0;
-int sor =0;
+int rssi = -200;
+int rssiprevious = -200;
+int keyrssi = -200;
+int med =-200;
+int kal =-200;
+int sor =-200;
 String ptr;
 String str;
 String str3;
@@ -396,6 +396,17 @@ void hist_update(int keyrssi)
     return;
 }
 
+float est_dist(int RSSI)
+{
+
+//0db - -52
+// 4db -50
+// -4db -58
+float dist = pow(10,( (-75 - RSSI)/(10*3.8) ));
+
+return dist;
+}
+
 void loop()
 {
     //Serial.printf("Before Functions: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
@@ -403,10 +414,10 @@ void loop()
     med = median(rssi_hist); //Calculates the median of rssi_hist, returns median, and stores history in med_hist
     sor = SDOR(rssi_hist);
     kal = kalvin(rssi_hist);
-   
+    kal_dist = est_dist(kal);
     //History of Median Output Measurements.
-     Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
-
+    //Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
+    Serial.printf("%f,%f,%f,%f", est_dist(keyrssi), est_dist(med),est_dist(sor),est_dist(kal));
     
 
 
@@ -485,10 +496,10 @@ void loop()
         myOLED.clrScr();
         myOLED.print("Update Freq:", LEFT, 8);
         myOLED.printNumF((millis() - blescantime), 3, RIGHT, 8);
-        myOLED.print("Med RSSI:", LEFT, 24);
-        myOLED.printNumF(med, 3, RIGHT, 24); // 0.123
-        myOLED.print("Kal RSSI::", LEFT, 40);
-        myOLED.printNumF(kal, 3, RIGHT, 40);
+        myOLED.print("Kal RSSI:", LEFT, 24);
+        myOLED.printNumF(kal, 3, RIGHT, 24); // 0.123
+        myOLED.print("Kal Dist:", LEFT, 40);
+        myOLED.printNumF(kal_dist, 3, RIGHT, 40);
         myOLED.update();
 
         //BLE Functionality
@@ -522,6 +533,7 @@ void loop()
                 //Serial.printf("%d\n", rssi);
 
                 keyrssi = rssi;
+
                 //Serial.printf("RSSIA %d\n", rssi);
                 //Convert RSSI to Distance
                 // Source : https://iotandelectronics.wordpress.com/2016/10/07/how-to-calculate-distance-from-the-rssi-value-of-the-ble-beacon/
@@ -537,8 +549,8 @@ void loop()
             //Serial.println((strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0));
 
 
-
-            if ((keyrssi > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
+            //switch back to keyrssi if kal is unstable.
+            if ((kal > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
            // if ((med > RSSI_THRESHOLD))
             {
                 prev = 1; // Light was turned on previously in this loop
@@ -699,12 +711,13 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     gate_delay = false;
     delay(150); // potential delay to avoid crashing.
 
-    //Husarnet to allow for internet CLI
+    /* Husarnet to allow for internet CLI
     Husarnet.selfHostedSetup(dashboardURL);
     Husarnet.join(husarnetJoinCode, hostName);
     Husarnet.start();
     delay(5000);
-
+    */
+   
     /* WebServer Command Structure */
     server.on("/", handle_OnConnect);
     server.on("/toggle", handle_toggleGate);
