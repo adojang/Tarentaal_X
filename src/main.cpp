@@ -56,13 +56,6 @@ const char* dashboardURL = "default";
 
 
 
-
-
-
-
-
-
-
 //int median(int incomingdata[], int dataCounter);
 void wifi_init();
 void triggerGate(uint16_t delaytime);
@@ -90,8 +83,8 @@ String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
 /* Constants */
 int RSSI_THRESHOLD = -60;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
 int RSSI_CONFIG = -40;        // For starting the Webserver
-uint8_t RSSI_CUSTOM_IN = 60;  //The EEPROM value will overwrite this.
-uint8_t RSSI_CUSTOM_OUT = 60; //The EEPROM value will overwrite this.
+uint8_t RSSI_CUSTOM_IN = 60;  //RSSI trigger from IN going OUT The EEPROM value will overwrite this.
+uint8_t RSSI_CUSTOM_OUT = 60; //RSSI trigger from OUT coming IN The EEPROM value will overwrite this.
 
 bool device_found = false;
 bool wifibool = false;
@@ -111,9 +104,9 @@ uint8_t LED_TRIGGER = 16;
 uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Can Remove
 
-uint32_t scanTime = 2;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 2000; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 1999;   //the window of time after each interval which is being scanned in milliseconds
+uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
+uint16_t interval = 1000; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 1000;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
@@ -188,22 +181,7 @@ void IRAM_ATTR i_enter()
     b_enter.numberKeyPresses += 1;
 }
 
-/* Kalman Filter*/
-/*
-int n = 2;       // Number of states
-int m = 2;       // Number of measurements
-double dt = 1.0; // Time step
 
-Eigen::MatrixXd A(n, n); // System dynamics matrix
-Eigen::MatrixXd C(m, n); // Output matrix
-Eigen::MatrixXd Q(n, n); // Process noise covariance
-Eigen::MatrixXd R(m, m); // Measurement noise covariance
-Eigen::MatrixXd P(n, n); // Estimate error covariance
-
-Eigen::VectorXd y(m); // Buffer for current and past value storage.
-
-KalmanFilter kf(dt, A, C, Q, R, P);
-*/
 std::vector<int> rssi_hist{1, 1, 1, 1, 1};
 std::vector<int> rssi_med{-1, -1, -1, -1, -1};
 
@@ -229,7 +207,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
             if ((strcmp(addressReturn.c_str(), knownBLEAddresses[i].c_str()) == 0))
             {
-                    Serial.printf("Device MATCHES %d\n", rssi);
+                //    Serial.printf("Device MATCHES %d\n", rssi);
                 //    Serial.println("THERE IS A MATCHHHHHHHHHHHHHH\n");
                 //    Serial.println(str3.c_str());
                 //    Serial.println(knownBLEAddresses[i].c_str());
@@ -247,51 +225,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         //Serial.println("*************END FOR LOOP**************");
     }
 };
-/*
-void kalman_init()
-{
-    // Discrete LTI projectile motion, measuring position only
-    A << 0, 1, 0, 0;
-    C << 1, 0, 0, 0;
 
-    // Reasonable covariance matrices
-    R << 1, 0, 0, 1;
-    P << 5, 0, 0, 5;
-    Q << 0.1, 0.1, 0.1, 0.1;
-
-    std::cout << "A: \n"
-              << A << std::endl;
-    std::cout << "C: \n"
-              << C << std::endl;
-    std::cout << "R: \n"
-              << R << std::endl;
-    std::cout << "P: \n"
-              << P << std::endl;
-    std::cout << "Q: \n"
-              << Q << std::endl;
-
-    std::vector<double> measurements = {(double)rssi, (double)rssiprevious}; //Initialize with 111 and 110 respectively.
-    Eigen::VectorXd x0(n);
-    x0 << measurements[0], measurements[1];
-    kf.init(0, x0);
-
-    Serial.println("Finish Kalman Initialization");
-}
-
-int kalman_update(int current_rssi, int rssi_hist)
-{
-
-    //   std::cout << "t = " << 0 << ", "
-    //              << "x_hat[0]: " << kf.state().transpose() << std::endl;
-
-    y << -current_rssi, -rssi_hist;
-    kf.update(y);
-    std::cout << "Original: " << y.transpose()
-              << "\n Output: " << kf.state().transpose() << std::endl;
-
-    return (kf.state().transpose())[0];
-}
-*/
 void setup()
 {
     EEPROM.begin(2);
@@ -316,6 +250,7 @@ void setup()
     pinMode(LED_BUILTIN, OUTPUT);
     RSSI_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
     RSSI_CUSTOM_OUT = EEPROM.read(1);
+    RSSI_THRESHOLD = -RSSI_CUSTOM_IN;
 
     if (!myOLED.begin(SSD1306_128X64))
         while (1)
@@ -332,37 +267,6 @@ void setup()
     pBLEScan->setWindow(window);                                               // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
 
-    //typedef float T;
-    //typedef Kalman::SystemModel<T> SystemModel;
-
-    //std::default_random_engine generator;
-    //std::normal_distribution<float> noise(0, 1);
-    //noise(generator); // Genereate random Number
-
-    /*
-//    SystemModel sys;
-    typedef float T;
-    typedef Kalman::Vector<int,1> State;
-    typedef Kalman::SystemModel<int> SystemModel;
-    typedef Kalman::MeasurementModel<State,SystemModel> MeasurementModel;
-
-    State x;
-    SystemModel sys;
-
-    std::default_random_engine generator;
-    generator.seed( std::chrono::system_clock::now().time_since_epoch().count() );
-    std::normal_distribution<T> noise(0, 1);
-    Kalman::ExtendedKalmanFilter<State> predictor;
-
-    predictor.init(x);
-    x[0] = rssi;
-    auto x_pred = predictor.predict(sys,0);
-*/
-
-    //Start WIFI and BLE simultaneously
-    //Enable if you want Simultaneous BLE and Wifi.
-    //wifi_init();
-    //kalman_init();
 }
 
 int meanx()
@@ -535,6 +439,7 @@ void loop()
     /* Exit BLE Mode, Start Wifi */
     if ((b_config.numberKeyPresses > 0) && (!config_ble))
     {
+        digitalWrite(LED_BLE, LOW);
         Serial.println("Config Button Pushed, Disable BLE\n");
         configcounter = 0;
         config_ble = true;
@@ -565,8 +470,8 @@ void loop()
 
     if (!config_ble) /* Start of BLE Loop */
     {
-        digitalWrite(LED_WIFI, LOW);
-        digitalWrite(LED_BLE, HIGH);
+        
+        //digitalWrite(LED_BLE, HIGH);
 
         //temp = -70 - med;
         //temp = temp / 40; // The 40 is arbitrary and must be tuned.
@@ -578,12 +483,12 @@ void loop()
 
         /* OLED DISPLAY UPDATE */
         myOLED.clrScr();
-        myOLED.print("Algebraic Dist:", LEFT, 8);
-        myOLED.printNumF(distance, 3, RIGHT, 8);
+        myOLED.print("Update Freq:", LEFT, 8);
+        myOLED.printNumF((millis() - blescantime), 3, RIGHT, 8);
         myOLED.print("Med RSSI:", LEFT, 24);
         myOLED.printNumF(med, 3, RIGHT, 24); // 0.123
-        myOLED.print("Kal Dist::", LEFT, 40);
-        //myOLED.printNumF(kal_dist, 3, RIGHT, 40);
+        myOLED.print("Kal RSSI::", LEFT, 40);
+        myOLED.printNumF(kal, 3, RIGHT, 40);
         myOLED.update();
 
         //BLE Functionality
@@ -606,8 +511,8 @@ void loop()
             {
                 /*BLE Beacon has been found and is within range. */
                 
-                
-                //Serial.println(millis() - blescantime); // The time between sucessive updates
+                Serial.println();
+                Serial.println(millis() - blescantime); // The time between sucessive updates
                 
                 
                 
@@ -625,15 +530,8 @@ void loop()
                 //distance = pow(10, temp);
                 //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
 
-                //Serial.printf("%f,\n", (double)rssi);
-                //Serial.printf("%f\n", distance);
-
-                //Serial.write("%d", rssi);
-                //Serial.write("%d",(int16_t)distance);
             }
-
-            //Temp fix. 
-            //RSSI_THRESHOLD = -RSSI_CUSTOM_OUT;
+            
             //Serial.printf("Med: %d, Thresh: %d\n", med, RSSI_THRESHOLD);
             //Serial.printf("Device found: %d", (device_found == true));
             //Serial.println((strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0));
@@ -679,7 +577,6 @@ void loop()
                 RSSI_THRESHOLD = -RSSI_CUSTOM_IN;
                 gate_delay = false;
             }
-            //prev = 0;
         }
         pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
     }
@@ -788,6 +685,7 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
 
     //WiFi.softAP(ssid, password);
     //WiFi.softAPConfig(local_ip, gateway, subnet);
+
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED)
     {
@@ -802,9 +700,10 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     delay(150); // potential delay to avoid crashing.
 
     //Husarnet to allow for internet CLI
-    //Husarnet.selfHostedSetup(dashboardURL);
-    //Husarnet.join(husarnetJoinCode, hostName);
-    //Husarnet.start();
+    Husarnet.selfHostedSetup(dashboardURL);
+    Husarnet.join(husarnetJoinCode, hostName);
+    Husarnet.start();
+    delay(5000);
 
     /* WebServer Command Structure */
     server.on("/", handle_OnConnect);
