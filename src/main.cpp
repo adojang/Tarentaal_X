@@ -1,20 +1,22 @@
 #include "Arduino.h"
+//#include <ArduinoBLE>
+// Unused Libraries
 
 /* #include <kalman/KalmanFilterBase.hpp>
 #include <kalman/SystemModel.hpp>
 #include <kalman/ExtendedKalmanFilter.hpp>
-
+//#include "kalman.hpp"
 #include <cmath>
 #include <iostream>
 #include <random>
 #include <chrono>
+#include <Husarnet.h>
 */
-//#include <Husarnet.h>
+
 #include <cmath>
 #include <algorithm>
 #include <iostream>
 #include <vector>
-//#include "kalman.hpp"
 /* 
  *  BLE Bluetooth Beacon, Adapted from Arduino Examples and various other sources.
  *  Adriaan van Wijk
@@ -31,7 +33,7 @@
  *   Eigen comes from https://gitlab.com/libeigen/eigen.git
  *   Web Integration Thanks to HusarNet and https://www.hackster.io/donowak/internet-controlled-led-strip-using-esp32-arduino-2ca8a9
  * 
- *
+ * NOTE: Getting lots of +56 values means it cannot find the device :)
  * 
  * 
  */
@@ -56,7 +58,6 @@ const char* dashboardURL = "default";
 */
 
 
-//int median(int incomingdata[], int dataCounter);
 void wifi_init();
 void triggerGate(uint16_t delaytime);
 void handle_OnConnect();
@@ -68,23 +69,28 @@ String SendHTML(uint8_t active);
 String refreshpageHTML();
 
 /* Put your SSID & Password */
-const char *ssid = "Graves Into Gardens";        // Enter SSID here
-const char *password = "throughchristalone"; //Enter Password here
+const char *ssid_client = "Graves Into Gardens";        // Enter SSID here
+const char *password_client = "throughchristalone"; //Enter Password here
+
+const char *ssid_host = "Tarentaal";        // Enter SSID here
+const char *password_host = "birdsfordays"; //Enter Password here
 
 /* Put IP Address details */
-//IPAddress local_ip(10, 1, 1, 1);
-//IPAddress gateway(10, 10, 10, 1);
-//IPAddress subnet(255, 255, 255, 0);
+IPAddress local_ip(10, 1, 1, 1);
+IPAddress gateway(10, 10, 10, 1);
+IPAddress subnet(255, 255, 255, 0);
 WebServer server(80);
 
 /* Enter Known BLE Device Mac Addresses */
-String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
+//Owlet1 - db:17:35:a3:4c:27
+// Peep - dc:0d:69:a7:f7:9a
+String knownBLEAddresses[] = {"dc:0d:69:a7:f7:9a"};
 
 /* Constants */
-int RSSI_THRESHOLD = -60;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
-int RSSI_CONFIG = -40;        // For starting the Webserver
-uint8_t RSSI_CUSTOM_IN = 60;  //RSSI trigger from IN going OUT The EEPROM value will overwrite this.
-uint8_t RSSI_CUSTOM_OUT = 60; //RSSI trigger from OUT coming IN The EEPROM value will overwrite this.
+int RSSI_THRESHOLD = -90;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
+int RSSI_CONFIG = -10;        // For starting the Webserver - IMPOSSIBLE for now.
+uint8_t RSSI_CUSTOM_IN = 88;  //RSSI trigger from IN going OUT The EEPROM value will overwrite this.
+uint8_t RSSI_CUSTOM_OUT = 88; //RSSI trigger from OUT coming IN The EEPROM value will overwrite this.
 
 bool device_found = false;
 bool wifibool = false;
@@ -104,9 +110,11 @@ uint8_t LED_TRIGGER = 16;
 uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Can Remove
 
+// Window shall be LE to interval
+
 uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 1000; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 1000;   //the window of time after each interval which is being scanned in milliseconds
+uint16_t interval = 200; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 200;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
@@ -115,11 +123,11 @@ double distance = 0;
 float kal_dist =0;
 
 unsigned long previoustime = 0;
-const long time_delay = 20000; // Ideally 15 sec, in ms.
+const long time_delay = 2000; // Ideally 15 sec, in ms. 20000
 unsigned long currenttime;
 int pos = 0;
 int scannumber = 0;
-int i = 0;
+//int i = 0;
 int dataCounter = 0;
 int incomingData[50] = {0};
 int k;
@@ -131,6 +139,8 @@ int keyrssi = -200;
 int med =-200;
 int kal =-200;
 int sor =-200;
+long last_discovered = 200;
+int ctr = 1;
 String ptr;
 String str;
 String str3;
@@ -184,6 +194,7 @@ void IRAM_ATTR i_enter()
 
 std::vector<int> rssi_hist{1, 1, 1, 1, 1};
 std::vector<int> rssi_med{-1, -1, -1, -1, -1};
+std::vector<int> movingavg{0, 0, 0, 0, 0};
 
 
 /* ------------------------------------------- End of Constant Initialization --------------------------------------------- */
@@ -197,6 +208,10 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
         // Serial.println("Function For Loop Start...");
         for (int i = 0; i < (sizeof(knownBLEAddresses) / sizeof(knownBLEAddresses[i])); i++)
         {
+
+            //TEST
+            
+
             //Compare Each incoming signal with my code above and if it matches, set a flag that the key is within range.
             str = advertisedDevice.toString().c_str();
             //pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
@@ -207,6 +222,8 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
             if ((strcmp(addressReturn.c_str(), knownBLEAddresses[i].c_str()) == 0))
             {
+                //THIS IS THE MOST IMPORTANT LINE IN THIS WHOLE FILE
+                advertisedDevice.getScan()->stop();
                 //    Serial.printf("Device MATCHES %d\n", rssi);
                 //    Serial.println("THERE IS A MATCHHHHHHHHHHHHHH\n");
                 //    Serial.println(str3.c_str());
@@ -297,7 +314,7 @@ int SDOR(std::vector<int> hist_SDOR)
     }
     int SD = sqrt(sum/5);
     //Serial.printf("SD: %d\n", SD);
-    //Remove bad elements
+    //Remove the elements that fall outside the permitted range of 2 x std deviation
     int limit =5;
      for(k=0;k<limit;k++)
     {
@@ -312,13 +329,13 @@ int SDOR(std::vector<int> hist_SDOR)
     //Calculate new average
 
     sum =0;
-    for(k=0;k<5;k++)
+    for(k=0;k<limit;k++)
     {
         sum += hist_SDOR[k];    
     }
 
 
-    return 0.25*(sum/(hist_SDOR.size())) + rssi*0.75;
+    return 0.25*(sum/(limit)) + rssi*0.75;
 }
 
 int median(std::vector<int> hist_med) // Calculates the median of rssi_hist, returns median, and stores history in med_hist
@@ -350,7 +367,7 @@ int kalvin(std::vector<int> hist_kal)
     std::vector<float> x{0, 0, 0, 0, 0,0,0,0};
     std::vector<float> x_update{0, 0, 0, 0, 0};
     
-    x[0]  = keyrssi; // Our Estimate of the RSSI
+    x[0]  = meanx(); // Our Initial Estimate of the RSSI, in this case the mean of the past 5 values.
     p[0] = 15*15; //How uncertain we are in our predictions
     int q = 0.005;
     
@@ -402,7 +419,8 @@ float est_dist(int RSSI)
 //0db - -52
 // 4db -50
 // -4db -58
-float dist = pow(10,( (-75 - RSSI)/(10*3.8) ));
+//float dist = pow(10,( (-75 - RSSI)/(10*3.8) )); // The Emperical Model
+float dist = 0.00002365*exp(-0.1329*RSSI)+33.71*exp(0.07747*RSSI);
 
 return dist;
 }
@@ -413,11 +431,12 @@ void loop()
     hist_update(keyrssi); //Update history of past keyrssi values
     med = median(rssi_hist); //Calculates the median of rssi_hist, returns median, and stores history in med_hist
     sor = SDOR(rssi_hist);
-    kal = kalvin(rssi_hist);
+    kal = kalvin(rssi_hist); //Initial guess is the average of past 5 samples.
     kal_dist = est_dist(kal);
     //History of Median Output Measurements.
+    
     //Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
-    Serial.printf("%f,%f,%f,%f", est_dist(keyrssi), est_dist(med),est_dist(sor),est_dist(kal));
+    //Serial.printf("Distance: %f,%f,%f,%f\n", est_dist(keyrssi), est_dist(med),est_dist(kal),est_dist(sor));
     
 
 
@@ -427,7 +446,7 @@ void loop()
 
     
     /* Line for Plotting */
-    //Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
+    Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
     //Serial.printf("%d,%d\n",(int8_t)(rssi), (int8_t)(med)); //rssi and median
 
     /*Time keeping function used to prevent multiple gate retriggers */
@@ -463,6 +482,7 @@ void loop()
     if ((b_config.numberKeyPresses > 0) && (config_ble))
     {
         digitalWrite(LED_BLE, HIGH);
+        digitalWrite(LED_WIFI, LOW);
         Serial.println("\n Button Pushed, Disabling Wifi");
         WiFi.softAPdisconnect(true);
         config_ble = false;
@@ -481,35 +501,28 @@ void loop()
 
     if (!config_ble) /* Start of BLE Loop */
     {
-        
-        //digitalWrite(LED_BLE, HIGH);
-
-        //temp = -70 - med;
-        //temp = temp / 40; // The 40 is arbitrary and must be tuned.
-        //float med_dist = pow(10, temp);
-
-        //temp = -70 - kal;
-       // temp = temp / 40; // The 40 is arbitrary and must be tuned.
-        //float kal_dist = pow(10, temp);
 
         /* OLED DISPLAY UPDATE */
         myOLED.clrScr();
         myOLED.print("Update Freq:", LEFT, 8);
-        myOLED.printNumF((millis() - blescantime), 3, RIGHT, 8);
+        myOLED.printNumI(last_discovered, RIGHT, 8);
         myOLED.print("Kal RSSI:", LEFT, 24);
         myOLED.printNumF(kal, 3, RIGHT, 24); // 0.123
         myOLED.print("Kal Dist:", LEFT, 40);
         myOLED.printNumF(kal_dist, 3, RIGHT, 40);
         myOLED.update();
 
-        //BLE Functionality
-        //Serial.println("BLE Loop Start");
 
-        BLEScanResults foundDevices = pBLEScan->start(scanTime, false); // This Takes 1 Second.
-
+        // ORIGINAL BLEScanResults foundDevices = pBLEScan->start(scanTime, false); // This Takes 1 Second.
+        //Serial.println("StartScan");
+        pBLEScan->start(scanTime, false); // This Takes 1 Second.
+       
+        BLEScanResults foundDevices  = pBLEScan->getResults();
+       
+        
         //Needed if you want simultaneous wifi to work.
+        
         //server.handleClient();
-
         //Serial.println("BLE End Scanresults\n");
         //Serial.println(foundDevices.getCount());
 
@@ -522,14 +535,26 @@ void loop()
             {
                 /*BLE Beacon has been found and is within range. */
                 
-                Serial.println();
-                Serial.println(millis() - blescantime); // The time between sucessive updates
+                //Serial.println();
+                //Serial.println(millis() - blescantime); // The time between sucessive updates
+                last_discovered = millis() - blescantime;
+                
+                /*
+                movingavg.pop_back();
+                movingavg.insert((movingavg.begin()), last_discovered);
                 
                 
-                
+                ctr = 0;
+                for (int i=0; i< 5; i++) // Resets moving avg to only use the last 10 values.
+                {
+                ctr += movingavg[i];
+                }
+                Serial.printf("Moving Avg: %d\n", (ctr/5));
+
+                */
                 blescantime = millis();
 
-                //Serial.printf("Key found, keyrssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
+            ///Serial.printf("Key found, keyrssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
                 //Serial.printf("%d\n", rssi);
 
                 keyrssi = rssi;
@@ -554,7 +579,7 @@ void loop()
            // if ((med > RSSI_THRESHOLD))
             {
                 prev = 1; // Light was turned on previously in this loop
-                Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
+                //Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
             }
             if ((keyrssi > RSSI_CONFIG) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
             {
@@ -652,6 +677,7 @@ void loop()
             {
                 linenumber = 0;
                 //ENABLE FOR PRODUCTION BELOW
+                
                 EEPROM.write(0, RSSI_CUSTOM_IN);
                 EEPROM.write(1, RSSI_CUSTOM_OUT);
                 EEPROM.commit();
@@ -663,6 +689,7 @@ void loop()
                 myOLED.print("Custom Values Saved", CENTER, 24);
                 myOLED.update();
                 delay(2000); // To allow user to read message
+                
                 b_enter.numberKeyPresses = 0;
             }
         }
@@ -680,25 +707,19 @@ void triggerGate(uint16_t delaytime)
     digitalWrite(LED_TRIGGER, LOW);
 }
 
-
-void wifi_init() /* Wifi Intialization - Runs Once. */
+void wifi_station()
 {
+    WiFi.softAP(ssid_host, password_host);
+    WiFi.softAPConfig(local_ip, gateway, subnet);
+    Serial.println("Wifi Hosted..!");
+}
 
-    digitalWrite(LED_BLE, LOW);
-    digitalWrite(LED_WIFI, HIGH);
+void wifi_client()
+{
+    /* Enable Station Mode Where it connects to a local Wifi */
 
-    myOLED.clrScr();
-    //myOLED.print("Wifi Innit.", LEFT, 8);
-    myOLED.print("Wifi Initialize", CENTER, 24);
-    //myOLED.printNumI(RSSI_CUSTOM_IN, RIGHT, 24);
-    //myOLED.print("Custom RSSI OUT:", LEFT, 40);
-    //myOLED.printNumI(RSSI_CUSTOM_OUT, RIGHT, 40);
-    myOLED.update();
-
-    //WiFi.softAP(ssid, password);
-    //WiFi.softAPConfig(local_ip, gateway, subnet);
-
-    WiFi.begin(ssid, password);
+    
+    WiFi.begin(ssid_client, password_client);
     while (WiFi.status() != WL_CONNECTED)
     {
         delay(1000);
@@ -708,6 +729,26 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     Serial.println("WiFi connected..!");
     Serial.print("Got IP: ");  Serial.println(WiFi.localIP());
     
+}
+
+
+void wifi_init() /* Wifi Intialization - Runs Once. */
+{
+
+    digitalWrite(LED_BLE, LOW);
+    digitalWrite(LED_WIFI, HIGH);
+
+    wifi_station();
+    //wifi_client();
+
+    myOLED.clrScr();
+    //myOLED.print("Wifi Innit.", LEFT, 8);
+    myOLED.print("Wifi Initialized", CENTER, 24);
+    //myOLED.printNumI(RSSI_CUSTOM_IN, RIGHT, 24);
+    //myOLED.print("Custom RSSI OUT:", LEFT, 40);
+    //myOLED.printNumI(RSSI_CUSTOM_OUT, RIGHT, 40);
+    myOLED.update();
+
     gate_delay = false;
     delay(150); // potential delay to avoid crashing.
 
@@ -774,7 +815,7 @@ void handle_exitconfig()
 
 void handle_NotFound()
 {
-    server.send(404, "text/plain", "Not found. Are you sure you have the right fishtank?");
+    server.send(404, "text/plain", "Not found. Are you sure you're surfing the right web?");
 }
 
 /* Web Page Design */
