@@ -131,7 +131,8 @@ float wijkstra_dist =100;
 
 unsigned long previoustime = 0;
 uint32_t time_delay = 2000; // Ideally 15 sec, in ms. 20000
-unsigned long currenttime;
+//unsigned long time_since_last_sample;
+float ref_time =0;
 int pos = 0;
 int scannumber = 0;
 int dataCounter = 0;
@@ -503,8 +504,11 @@ void dist_hist_update(float dist) // Update distance_history vector
     return;
 }
 
-float est_dist(int RSSI) //Estimate distance given RSSI using a model.
+float est_dist(int type, int RSSI) //Estimate distance given RSSI using a model.
 {
+    float dist = -1;
+
+    //1 - Free Space, 2 - Altbeacon fit 3 - Curve fit double exp.
 //0db - -52
 // 4db -50
 // -4db -58
@@ -516,8 +520,13 @@ float est_dist(int RSSI) //Estimate distance given RSSI using a model.
 //Lab Model - Single Exp - Positive RSSI
 //float dist = 0.00001935*exp(0.1337*RSSI*-1);
 
+if (type==1) dist = pow(10,( (-75 - RSSI)/(10*3.8) )); // The Emperical Model
+
+if (type ==2) dist = 0.00002365*exp(-0.1329*RSSI)+33.71*exp(0.07747*RSSI);
+
+if (type == 3)  dist = 0.01718*(exp(-0.03644*RSSI)) + 0.000001143*(exp(-0.1611*RSSI));
 //Lab Model - Double Exp - Neg RSSI
-float dist = 0.01718*(exp(-0.03644*RSSI)) + 0.000001143*(exp(-0.1611*RSSI));
+
 return dist;
 }
 
@@ -536,7 +545,7 @@ float wijkstra(){
     //Take the mean of the last 5 SDOR values, feed into the distance estimation algorithm.
     //float distance = est_dist((meanx(sdor_med_hist)));
     //Serial.printf("SDOR Output: %d\n", SDOR(med_hist));
-    float distance = est_dist(SDOR(med_hist));
+    float distance = est_dist(3, SDOR(med_hist));
 
     //Serial.printf("Raw Distance: %f\n", distance);
 
@@ -566,20 +575,24 @@ void loop()
     //dist_hist_update(est_dist(kal));
     //kal_dist = kalvin(dist_hist); //Smooth Distance. RAW, KAL, Dist, KAL
 
-    Serial.printf("%f, %f\n", wijkstra_dist, est_dist(rssi));
+    //Serial.printf("%f, %f\n", wijkstra_dist, est_dist(1, rssi));
 
     //Serial.printf("%f", wijkstra());
     //History of Median Output Measurements.
     
+  
+   
+    ref_time = ref_time + last_discovered/100; //Ref time since boot. To keep track of samples.
+
+    Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time/10);
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(3, keyrssi), est_dist(3, med), est_dist(3, kal), wijkstra_dist, ref_time/10);
+
     //Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
-    //Serial.printf("Distance: %f,%f,%f,%f\n", est_dist(keyrssi), est_dist(med),est_dist(kal),est_dist(sor));
+    //Serial.printf("Distance: %f,%f,%f,%f\n",est_dist(1, sor));
+    
     
 
-
-    rssiprevious = rssi;
-    currenttime = millis();
-
-    
     /* Line for Plotting */
 
     //Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
@@ -591,9 +604,9 @@ void loop()
     //Serial.printf("%d,%d\n",(int8_t)(rssi), (int8_t)(med)); //rssi and median
 
     /*Time keeping function used to prevent multiple gate retriggers */
-    if (currenttime - previoustime >= time_delay) // time delay is 15 sec ideally.
-    {
-        previoustime = currenttime;
+    if (millis() - previoustime >= time_delay) // time delay is 15 sec ideally.
+    { 
+        previoustime = millis();
         gate_delay = true;
     }
 
