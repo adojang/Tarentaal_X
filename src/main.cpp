@@ -93,10 +93,10 @@ String knownBLEAddresses[] = {"dc:0d:69:a7:f7:9a"};
 //uint8_t RSSI_CUSTOM_IN = 88;  //RSSI trigger from IN going OUT The EEPROM value will overwrite this.
 //uint8_t RSSI_CUSTOM_OUT = 88; //RSSI trigger from OUT coming IN The EEPROM value will overwrite this.
 
-float DIST_THRESHOLD = 1.5;
-float DIST_CUSTOM_IN = 1.2;
-float DIST_CUSTOM_OUT = 10;
-float DIST_CONFIG = 0.1;
+float DIST_THRESHOLD = 1.5; // Now overwritten by EEPROM memory
+float DIST_CUSTOM_IN = 1.25; // Overwritten by EEPROM memory
+float DIST_CUSTOM_OUT = 10; // Overwritten by EEPROM memory
+float DIST_CONFIG = 0.08;
 //Note, DIST_CONFIG is disabled at the moment.
 
 bool device_found = false;
@@ -127,10 +127,10 @@ uint16_t window = 200;   //the window of time after each interval which is being
 uint16_t configcounter = 0;
 
 //double distance = 0;
-float wijkstra_dist =100;
+float wijkstra_dist =222;
 
 unsigned long previoustime = 0;
-uint32_t time_delay = 2000; // Ideally 15 sec, in ms. 20000
+uint32_t time_delay = 7000; // Ideally 15 sec, in ms. 20000
 //unsigned long time_since_last_sample;
 float ref_time =0;
 int pos = 0;
@@ -140,12 +140,12 @@ int incomingData[50] = {0};
 int prev = 0;
 int state = 0; // 0 - inside | 1 - outside
 int rssi = -200;
-int rssiprevious = -200;
-int keyrssi = -200;
-int med =-200;
-int kal =-200;
-int sor =-200;
-long last_discovered = 200;
+int rssiprevious = -222;
+int keyrssi = -222;
+int med =-222;
+int kal =-222;
+int sor =-222;
+long last_discovered = 222;
 int ctr = 1;
 String ptr;
 String str;
@@ -257,7 +257,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
 void setup()
 {
-    EEPROM.begin(2);
+    EEPROM.begin(16);
     Serial.begin(115200); //Enable UART on ESP32
 
     pinMode(b_trigger.PIN, INPUT_PULLUP);
@@ -278,11 +278,26 @@ void setup()
 
     pinMode(LED_BUILTIN, OUTPUT);
 
-    
+    /* A note about EEPROM 
 
-    DIST_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
-    DIST_CUSTOM_OUT = EEPROM.read(1);
-    DIST_THRESHOLD = DIST_CUSTOM_IN;
+        As EEPROM saves values in BYTES this makes it a problem when our value is a float.
+        a float is 4 bytes long. so hopefully this works.
+      
+
+    */
+
+
+    //EEPROM.put(0, float(3));
+    //EEPROM.put(8, float(3));
+    //EEPROM.commit();
+
+
+    EEPROM.get(0, DIST_CUSTOM_IN);
+    EEPROM.get(8, DIST_CUSTOM_OUT);
+    DIST_THRESHOLD = DIST_CUSTOM_IN; // assume initially inside.
+
+    //Serial.println(DIST_CUSTOM_IN);
+    //Serial.println(DIST_CUSTOM_OUT);
 
 
     /*
@@ -292,8 +307,7 @@ void setup()
 
     */
     if (!myOLED.begin(SSD1306_128X64))
-        while (1)
-            ; // In case the library failed to allocate enough RAM for the display buffer...
+        while (1); // In case the library failed to allocate enough RAM for the display buffer...
     myOLED.setFont(SmallFont);
 
     /* BLE Initialization */
@@ -305,6 +319,7 @@ void setup()
     pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
     pBLEScan->setWindow(window);                                                // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
+    
 
 }
 
@@ -584,9 +599,9 @@ void loop()
    
     ref_time = ref_time + last_discovered/100; //Ref time since boot. To keep track of samples.
 
-    Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
     //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time/10);
-    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(3, keyrssi), est_dist(3, med), est_dist(3, kal), wijkstra_dist, ref_time/10);
+    Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(3, keyrssi), est_dist(3, med), est_dist(3, kal), wijkstra_dist, ref_time/10);
 
     //Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
     //Serial.printf("Distance: %f,%f,%f,%f\n",est_dist(1, sor));
@@ -611,7 +626,7 @@ void loop()
     }
 
     /* Proximity Based Config Trigger */
-    if (configcounter >= 2) // 2 Is arbitrary, can be more
+    if (configcounter <= -20) // 2 Is arbitrary, can be more
     {
 
         Serial.println("Disable BLE\n");
@@ -750,7 +765,11 @@ void loop()
            if ((wijkstra_dist < DIST_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
             {
                  // if ((med > RSSI_THRESHOLD))
-                prev = 1; // Light was turned on previously in this loop
+                 if (gate_delay == true) // This ensures gate is only ARMED when time has run out.
+                 {
+                    prev = 1;
+                 }
+                 // Light was turned on previously in this loop
                 //Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
             }
 
@@ -767,7 +786,7 @@ void loop()
         if (prev == 1)
         {
             //TRIGGER ENABLED.
-            if (state == 0 && gate_delay == true)
+            if (state == 0)
             {
                 Serial.println("Triggered, going OUT");
                 triggerGate(1500);
@@ -781,7 +800,9 @@ void loop()
                 gate_delay = false;
             }
             
-            if (state == 1 && gate_delay == true) // Assume state = 1 so I am outside.
+            //This is a bad fix and I shall not use it.
+            //Proceeds to use it anyway...
+            if (state == 1 && prev ==1) // Assume state = 1 so I am outside.
             {
                 Serial.println("Triggered, coming IN");
                 triggerGate(1500);
@@ -819,21 +840,21 @@ void loop()
             if (b_up.numberKeyPresses > 0)
             {
                 DIST_CUSTOM_IN += 0.25;
-                delay(25);
+                delay(50);
                 b_up.numberKeyPresses = 0;
             }
 
             if (b_down.numberKeyPresses > 0)
             {
                 DIST_CUSTOM_IN -= 0.25;
-                delay(25);
+                delay(50);
                 b_down.numberKeyPresses = 0;
             }
 
             if (b_enter.numberKeyPresses > 0)
             {
                 linenumber = 1;
-                delay(25);
+                delay(50);
                 b_enter.numberKeyPresses = 0;
             }
         }
@@ -843,14 +864,14 @@ void loop()
             if (b_up.numberKeyPresses > 0)
             {
                 DIST_CUSTOM_OUT += 0.25;
-                delay(25);
+                delay(50);
                 b_up.numberKeyPresses = 0;
             }
 
             if (b_down.numberKeyPresses > 0)
             {
                 DIST_CUSTOM_OUT -= 0.25;
-                delay(25);
+                delay(50);
                 b_down.numberKeyPresses = 0;
             }
 
@@ -859,8 +880,8 @@ void loop()
                 linenumber = 0;
                
                 
-                EEPROM.write(0, DIST_CUSTOM_IN);
-                EEPROM.write(1, DIST_CUSTOM_OUT);
+                EEPROM.put(0, DIST_CUSTOM_IN);
+                EEPROM.put(8, DIST_CUSTOM_OUT);
                 EEPROM.commit();
                 Serial.println("State saved in flash memory:");
                 Serial.printf("Custom IN: %f\n", DIST_CUSTOM_IN);
@@ -969,8 +990,8 @@ void handle_sendrssi()
     if (server.arg("custom_out") != "")
         DIST_CUSTOM_OUT = abs(server.arg("custom_out").toInt());
 
-    EEPROM.write(0, DIST_CUSTOM_IN);
-    EEPROM.write(1, DIST_CUSTOM_OUT);
+    EEPROM.put(0, DIST_CUSTOM_IN);
+    EEPROM.put(8, DIST_CUSTOM_OUT);
     EEPROM.commit();
     delay(20); // Just in case
     Serial.println("State saved in flash memory:");
