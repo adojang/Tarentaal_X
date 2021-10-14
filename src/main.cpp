@@ -5,7 +5,6 @@
 /* #include <kalman/KalmanFilterBase.hpp>
 #include <kalman/SystemModel.hpp>
 #include <kalman/ExtendedKalmanFilter.hpp>
-//#include "kalman.hpp"
 #include <cmath>
 #include <iostream>
 #include <random>
@@ -39,6 +38,7 @@
  */
 
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <WebServer.h>
 #include "BLEDevice.h"
 #include "BLEUtils.h"
@@ -71,11 +71,11 @@ String refreshpageHTML();
 /* Put your SSID & Password */
 const char *ssid_client = "Graves Into Gardens";        // Enter SSID here
 const char *password_client = "throughchristalone"; //Enter Password here
-
 const char *ssid_host = "Tarentaal";        // Enter SSID here
 const char *password_host = "birdsfordays"; //Enter Password here
 String loc = "IN";
-
+const String green = "green";
+const String serverName = "https://tarentaal4.herokuapp.com/result";
 /* Put IP Address details */
 IPAddress local_ip(10, 1, 1, 1);
 IPAddress gateway(10, 10, 10, 1);
@@ -85,7 +85,10 @@ WebServer server(80);
 /* Enter Known BLE Device Mac Addresses */
 //Owlet1 - db:17:35:a3:4c:27
 // Peep - dc:0d:69:a7:f7:9a
+
 String knownBLEAddresses[] = {"dc:0d:69:a7:f7:9a"};
+//String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
+
 
 /* Constants */
 //int RSSI_THRESHOLD = -90;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
@@ -120,8 +123,8 @@ uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually trigg
 // Window shall be LE to interval
 
 uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 200; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 200;   //the window of time after each interval which is being scanned in milliseconds
+uint16_t interval = 550; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 20;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
@@ -167,10 +170,10 @@ struct Button
     uint32_t numberKeyPresses;
 };
 
-Button b_trigger = {26, 0};
-Button b_config = {25, 0};
-Button b_up = {14, 0};
-Button b_down = {27, 0};
+Button b_trigger = {14, 0}; // 26 -> 14
+Button b_config = {26, 0}; // 25 -> 26
+Button b_up = {12, 0}; // 14 -> 12
+Button b_down = {14, 0}; //27 -> 14
 Button b_enter = {13, 0};
 
 void IRAM_ATTR i_trigger()
@@ -319,7 +322,7 @@ void setup()
     pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
     pBLEScan->setWindow(window);                                                // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
-    
+    //wifi_init();
 
 }
 
@@ -577,6 +580,43 @@ return final_est;
 
 }
 
+void tarentaalNet() // Check if the gate has been opened from the online trigger
+{
+    if(WiFi.status()== WL_CONNECTED){
+      HTTPClient http;
+      http.begin(serverName.c_str());
+      delay(500);
+      int httpResponseCode = http.GET();
+      delay(1000);
+      if (httpResponseCode>0) {
+        //Serial.print("HTTP Response code: ");
+        //Serial.println(httpResponseCode);
+        if (!green.compareTo(http.getString())) //Returns 0 if true so !
+        {
+          digitalWrite(2, HIGH);   // turn the LED on (HIGH is the voltage level)
+          delay(2000);                       // wait for a second
+          digitalWrite(2, LOW);
+          Serial.println("Green");
+        } 
+        else
+        {
+          Serial.println("Red");
+        }  
+      }
+      else {
+        Serial.print("Error code: ");
+        Serial.println(httpResponseCode);
+      }
+      http.end();
+    }
+    else 
+    {
+      Serial.println("ERROR WiFi Disconnected");
+    }
+
+
+
+}
 void loop()
 {
     /* Do not Remove */
@@ -595,7 +635,7 @@ void loop()
     //Serial.printf("%f", wijkstra());
     //History of Median Output Measurements.
     
-  
+    //tarentaalNet();
    
     ref_time = ref_time + last_discovered/100; //Ref time since boot. To keep track of samples.
 
@@ -606,6 +646,11 @@ void loop()
     //Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
     //Serial.printf("Distance: %f,%f,%f,%f\n",est_dist(1, sor));
     
+    
+
+
+    
+
     
 
     /* Line for Plotting */
@@ -824,6 +869,8 @@ void loop()
             wifi_init();       //initialize wifi, runs once.
         server.handleClient(); // handle the wifi page requests
 
+        
+
         /*Update OLED Display */
         myOLED.clrScr();
         myOLED.print("Editing Values:", LEFT, 8);
@@ -833,7 +880,7 @@ void loop()
         myOLED.printNumF(DIST_CUSTOM_OUT, 3, RIGHT, 40);
       
         myOLED.update();
-
+        
         if (linenumber == 0) //On the first line of OLED Display
         {
             //Consdier including a flash indicator here.
@@ -942,8 +989,8 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     digitalWrite(LED_BLE, LOW);
     digitalWrite(LED_WIFI, HIGH);
 
-    wifi_station();
-    //wifi_client();
+    //wifi_station(); //Be the Router
+    wifi_client(); //Connect to the Router
 
     myOLED.clrScr();
     //myOLED.print("Wifi Innit.", LEFT, 8);
