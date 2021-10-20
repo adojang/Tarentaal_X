@@ -121,8 +121,8 @@ uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually trigg
 // Window shall be LE to interval
 
 uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 200; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 200;   //the window of time after each interval which is being scanned in milliseconds
+uint16_t interval = 500; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 100;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
@@ -313,7 +313,8 @@ void setup()
     pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
     pBLEScan->setWindow(window);                                               // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
-    //wifi_init();
+    //Enable this for coexistance mode.
+    wifi_init();
 }
 
 int meanx(std::vector<int> data) // Calculates mean of rssi data
@@ -718,9 +719,9 @@ void loop()
 
         //Needed if you want simultaneous wifi to work.
 
-        //server.handleClient();
-        //Serial.println("BLE End Scanresults\n");
-        //Serial.println(foundDevices.getCount());
+        server.handleClient();
+        
+       
 
         for (int k = 0; k < foundDevices.getCount(); k++)
         {
