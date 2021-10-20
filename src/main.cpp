@@ -86,8 +86,9 @@ WebServer server(80);
 //Owlet1 - db:17:35:a3:4c:27
 // Peep - dc:0d:69:a7:f7:9a
 
-String knownBLEAddresses[] = {"dc:0d:69:a7:f7:9a"};
-//String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
+
+//String knownBLEAddresses[] = {"dc:0d:69:a7:f7:9a"};
+String knownBLEAddresses[] = {"db:17:35:a3:4c:27","dc:0d:69:a7:f7:9a"};
 
 
 /* Constants */
@@ -113,9 +114,9 @@ bool gate_delay = false; // Set as true so we don't need to wait for timedelay o
 // uint8_t s_up = 14;
 // uint8_t s_down = 27;
 // uint8_t s_enter = 13;
-uint8_t LED_BLE = 17;
-uint8_t LED_WIFI = 18;
-uint8_t LED_TRIGGER = 16;
+uint8_t LED_BLE = 5; // 17 -> 5 
+uint8_t LED_WIFI = 19; // 18 -> 19
+uint8_t LED_TRIGGER = 17; // 16 -> 17
 
 uint8_t linenumber = 0;
 uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually triggering.
@@ -123,8 +124,8 @@ uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually trigg
 // Window shall be LE to interval
 
 uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 550; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 20;   //the window of time after each interval which is being scanned in milliseconds
+uint16_t interval = 200; //the intervals at which scanning is actively taking place in milliseconds
+uint16_t window = 200;   //the window of time after each interval which is being scanned in milliseconds
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
@@ -133,9 +134,13 @@ uint16_t configcounter = 0;
 float wijkstra_dist =222;
 
 unsigned long previoustime = 0;
-uint32_t time_delay = 7000; // Ideally 15 sec, in ms. 20000
+
+uint32_t time_delay = 40000; // Ideally 15 sec, in ms. 20000
+
+
+
 //unsigned long time_since_last_sample;
-float ref_time =0;
+float ref_time =0; // in seconds.
 int pos = 0;
 int scannumber = 0;
 int dataCounter = 0;
@@ -148,7 +153,7 @@ int keyrssi = -222;
 int med =-222;
 int kal =-222;
 int sor =-222;
-long last_discovered = 222;
+float last_discovered = 222; // time in ms.
 int ctr = 1;
 String ptr;
 String str;
@@ -170,11 +175,12 @@ struct Button
     uint32_t numberKeyPresses;
 };
 
-Button b_trigger = {14, 0}; // 26 -> 14
-Button b_config = {26, 0}; // 25 -> 26
-Button b_up = {12, 0}; // 14 -> 12
-Button b_down = {14, 0}; //27 -> 14
-Button b_enter = {13, 0};
+Button b_trigger = {26, 0}; // 26 -> 26
+Button b_config = {25, 0}; // 25 -> 25
+int8_t config_mode = 0; // 0 main loop 1 Wifi 2 SAVE WIFI
+Button b_up = {14, 0}; // 14 -> 14
+Button b_down = {27, 0}; //27 -> 27
+Button b_enter = {13, 0}; // 13 -> Remains 13
 
 void IRAM_ATTR i_trigger()
 {
@@ -203,7 +209,7 @@ void IRAM_ATTR i_enter()
 
 std::vector<int> rssi_hist{1, 1, 1, 1, 1};
 std::vector<int> med_hist{-1, -1, -1, -1, -1};
-std::vector<int> sdor_med_hist{-1, -1, -1, -1, -1};
+//std::vector<int> sdor_med_hist{-1, -1, -1, -1, -1};
 std::vector<int> movingavg{0, 0, 0, 0, 0};
 std::vector<float> dist_hist{15,15,15,15,15};
 
@@ -217,6 +223,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 {
     void onResult(BLEAdvertisedDevice advertisedDevice)
     {
+        bool donotchangedevice = false;
         // Serial.println("Function For Loop Start...");
         for (int i = 0; i < (sizeof(knownBLEAddresses) / sizeof(knownBLEAddresses[i])); i++)
         {
@@ -226,6 +233,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
 
             //Compare Each incoming signal with my code above and if it matches, set a flag that the key is within range.
             str = advertisedDevice.toString().c_str();
+            
             //pos = str.indexOf("Address: "); // Note that we can also require a different attribute such as name instead of address to double vertify
             //This was when I was still analyzing hte whole string and doing needless work...
             //str3 = str.substring(pos + 9, pos + 26);
@@ -244,6 +252,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                 //    Serial.println(str3.c_str());
                 //    Serial.println(knownBLEAddresses[i].c_str());
                 device_found = true; //flag that is set that indicates I am within BLE range
+                donotchangedevice = true;
             }
             else
             {
@@ -251,6 +260,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                 //    Serial.println("No Match")
                 //    Serial.println(str3.c_str());
                 //   Serial.println(knownBLEAddresses[i].c_str());
+                if (!donotchangedevice) device_found = false; // This means that if ONE device is true, then do not set it false.
             }
             scannumber++;
         }
@@ -263,22 +273,30 @@ void setup()
     EEPROM.begin(16);
     Serial.begin(115200); //Enable UART on ESP32
 
+    
+    pinMode(15, OUTPUT_OPEN_DRAIN); //GND PIN FOR ANTENNA
+    digitalWrite(15, LOW); // GND PIN FOR ANTENNA
+    
+
     pinMode(b_trigger.PIN, INPUT_PULLUP);
     pinMode(b_config.PIN, INPUT_PULLUP);
     pinMode(b_up.PIN, INPUT_PULLUP);
     pinMode(b_down.PIN, INPUT_PULLUP);
-    pinMode(b_enter.PIN, INPUT_PULLUP);
+    //pinMode(b_enter.PIN, INPUT_PULLUP);
+
+    
 
     attachInterrupt(b_trigger.PIN, i_trigger, HIGH);
     attachInterrupt(b_config.PIN, i_config, HIGH);
     attachInterrupt(b_up.PIN, i_up, HIGH);
     attachInterrupt(b_down.PIN, i_down, HIGH);
-    attachInterrupt(b_enter.PIN, i_enter, HIGH);
+    //attachInterrupt(b_enter.PIN, i_enter, HIGH);
+
+    
 
     pinMode(LED_BLE, OUTPUT);
     pinMode(LED_WIFI, OUTPUT);
     pinMode(LED_TRIGGER, OUTPUT);
-
     pinMode(LED_BUILTIN, OUTPUT);
 
     /* A note about EEPROM 
@@ -289,26 +307,15 @@ void setup()
 
     */
 
-
-    //EEPROM.put(0, float(3));
-    //EEPROM.put(8, float(3));
+    //EEPROM.put(0, float(7));
+    //EEPROM.put(8, float(10));
     //EEPROM.commit();
-
 
     EEPROM.get(0, DIST_CUSTOM_IN);
     EEPROM.get(8, DIST_CUSTOM_OUT);
     DIST_THRESHOLD = DIST_CUSTOM_IN; // assume initially inside.
 
-    //Serial.println(DIST_CUSTOM_IN);
-    //Serial.println(DIST_CUSTOM_OUT);
 
-
-    /*
-    RSSI_CUSTOM_IN = EEPROM.read(0); // Note that these are UNSIGNED 8 bit ints, 0 - 255 range.
-    RSSI_CUSTOM_OUT = EEPROM.read(1);
-    RSSI_THRESHOLD = -RSSI_CUSTOM_IN;
-
-    */
     if (!myOLED.begin(SSD1306_128X64))
         while (1); // In case the library failed to allocate enough RAM for the display buffer...
     myOLED.setFont(SmallFont);
@@ -350,10 +357,12 @@ int meanx(std::vector<float> data) //Calculates mean of distance data
     return (sum) /data.size();
 }
 
-int SDOR(std::vector<int> hist_SDOR) // SDOR for rssi data
-{
+int SDOR(std::vector<int> input_data) // SDOR for rssi data. Uses globalvar rssi_hist
+{   
+    std::vector<int> hist_SDOR;
+    copy(input_data.begin(), input_data.end(), back_inserter(hist_SDOR)); // This copies rssi_history onto hist_SDOR
     //Calculate mean
-    int mean = meanx(rssi_hist);
+    int mean = meanx(hist_SDOR);
 
     //Calculate std Deviation.
     int k;
@@ -361,19 +370,20 @@ int SDOR(std::vector<int> hist_SDOR) // SDOR for rssi data
     for(k=0;k<5;k++)
     {
         //Serial.printf("hist_SDOR [%d]: %d\n", k, hist_SDOR[k]);
-        sum += (pow(abs(hist_SDOR[k] - mean),2));
+        sum += (pow(abs(input_data[k] - mean),2));
         //Serial.println(sum);   
     }
     int SD = sqrt(sum/5);
     //Serial.printf("SD: %d\n", SD);
+    //Serial.printf("Mean: %d", mean);
     //Remove the elements that fall outside the permitted range of 2 x std deviation
     int limit =5;
-     for(k=0;k<limit;k++)
+     for(k=0;k<limit;k++) // Note that when SD is 0, this pretty much removes everything and just outputs the RAW input value. I guess this makes sense.
     {
           if ((hist_SDOR[k] < (mean - 2*SD)))
           {
               hist_SDOR.erase(hist_SDOR.begin()+k);
-              //Serial.printf("Erase:%d, %d\n", hist_SDOR[k],(mean-2*SD));
+              //Serial.printf("history = %d is less than mean- 2 std = %d so ERASE\n", hist_SDOR[k],(mean-2*SD));
               limit = limit -1; //This prevents trying to access bad memory
           }
     }
@@ -390,14 +400,13 @@ int SDOR(std::vector<int> hist_SDOR) // SDOR for rssi data
     return 0.25*(sum/(limit)) + rssi*0.75;
 }
 
-int median(std::vector<int> hist_med) // Calculates the median of rssi_hist, returns median, and stores history in med_hist
+int median() // Calculates the median of rssi_hist, returns median, and stores history in med_hist. should be run once per loop.
 {
-    //Add newest RSSI, discard oldest.
-    //for(std::size_t i = 0; i < rssi_hist.size(); ++i) {
-    //std::cout << rssi_hist[i] << "\n";
-    //}
+    std::vector<int> temp_med;
+    copy(rssi_hist.begin(), rssi_hist.end(), back_inserter(temp_med)); // This copies rssi_history onto temp_med
+   
 
-    std::sort(hist_med.begin(), hist_med.end()); //Sort from most negative to least negative. ie: {-111, -110, -100}
+    std::sort(temp_med.begin(), temp_med.end()); //Sort from most negative to least negative. ie: {-111, -110, -100}
     // for(std::size_t i = 0; i < hist_med.size(); ++i) {
     //std::cout << hist_med[i] << "\n";
     //}
@@ -405,9 +414,9 @@ int median(std::vector<int> hist_med) // Calculates the median of rssi_hist, ret
     //Serial.printf("Sorted: %d, %d, %d\n", rssi_hist[0], rssi_hist[1], rssi_hist[2]);
     //Update Med History
     med_hist.pop_back();
-    med_hist.insert((med_hist.begin()), hist_med[2]);
+    med_hist.insert((med_hist.begin()), temp_med[2]);
 
-    return hist_med[2]; //Return middle value.
+    return temp_med[2]; //Return middle value.
 }
 
 int kalvin(std::vector<int> hist_kal) //kalman for rssi
@@ -508,14 +517,14 @@ float kalvin(std::vector<float> dist_kal) //kalman specifically for distance
     return (x[6]);
 }
 
-void hist_update(int keyrssi) //Update rssi_history vector
+void hist_update() //Update rssi_history vector
 {
     rssi_hist.pop_back();
     rssi_hist.insert((rssi_hist.begin()), keyrssi);
     return;
 }
 
-void dist_hist_update(float dist) // Update distance_history vector
+void dist_hist_update(float dist) // Update distance_history vector. Must only be run ONCE per loop.
 {
     dist_hist.pop_back();
     dist_hist.insert((dist_hist.begin()), dist);
@@ -538,17 +547,18 @@ float est_dist(int type, int RSSI) //Estimate distance given RSSI using a model.
 //Lab Model - Single Exp - Positive RSSI
 //float dist = 0.00001935*exp(0.1337*RSSI*-1);
 
-if (type==1) dist = pow(10,( (-75 - RSSI)/(10*3.8) )); // The Emperical Model
+if (type==1) dist = pow(10,( (-68.5 - RSSI)/(28) )); // Emperical Model
 
-if (type ==2) dist = 0.00002365*exp(-0.1329*RSSI)+33.71*exp(0.07747*RSSI);
+if (type ==2) dist =0.70140940321439 * pow((RSSI/-68.5), 10.3661084047352) -0.17574766; //AltBeacon Model
 
-if (type == 3)  dist = 0.01718*(exp(-0.03644*RSSI)) + 0.000001143*(exp(-0.1611*RSSI));
-//Lab Model - Double Exp - Neg RSSI
+if (type == 3) dist = 0.002629*exp(-0.0916*RSSI); //Exp Model
+
+if (type == 4)  dist = 10.75*exp(-1*pow(((RSSI+95.52)/15.95),2)); // Gaussian Model
 
 return dist;
 }
 
-float wijkstra(){
+float wijkstra(int distvar){
 
 //Preprocessing Section ----------------
 
@@ -563,7 +573,7 @@ float wijkstra(){
     //Take the mean of the last 5 SDOR values, feed into the distance estimation algorithm.
     //float distance = est_dist((meanx(sdor_med_hist)));
     //Serial.printf("SDOR Output: %d\n", SDOR(med_hist));
-    float distance = est_dist(3, SDOR(med_hist));
+    float distance = est_dist(distvar, SDOR(med_hist)); // Use median RSSI history, pipe to SDOR.
 
     //Serial.printf("Raw Distance: %f\n", distance);
 
@@ -578,6 +588,12 @@ return final_est;
 
 
 
+}
+
+int sample_hist()
+{
+    int missed_samples = (int)(ref_time/200); // the number of samples that have been missed since the last sample.
+    return missed_samples;
 }
 
 void tarentaalNet() // Check if the gate has been opened from the online trigger
@@ -617,57 +633,61 @@ void tarentaalNet() // Check if the gate has been opened from the online trigger
 
 
 }
+
 void loop()
 {
-    /* Do not Remove */
-    hist_update(keyrssi); //Update history of past keyrssi values
-    med = median(rssi_hist); //Calculates the median of rssi_hist, returns median, and stores history in med_hist
-    wijkstra_dist = wijkstra();
-    /*End */
-
-    sor = SDOR(rssi_hist); // Calculates SDOR, returns only single value estimate.
-    kal = kalvin(rssi_hist); //Initial guess is the average of past 5 samples.
-    //dist_hist_update(est_dist(kal));
-    //kal_dist = kalvin(dist_hist); //Smooth Distance. RAW, KAL, Dist, KAL
-
-    //Serial.printf("%f, %f\n", wijkstra_dist, est_dist(1, rssi));
-
-    //Serial.printf("%f", wijkstra());
-    //History of Median Output Measurements.
-    
-    //tarentaalNet();
-   
-    ref_time = ref_time + last_discovered/100; //Ref time since boot. To keep track of samples.
-
-    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
-    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time/10);
-    Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(3, keyrssi), est_dist(3, med), est_dist(3, kal), wijkstra_dist, ref_time/10);
-
-    //Serial.printf("%d,%d,%d,%d\n",(int8_t)(keyrssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
-    //Serial.printf("Distance: %f,%f,%f,%f\n",est_dist(1, sor));
-    
-    
-
-
-    
-
-    
-
-    /* Line for Plotting */
-
-    //Serial.printf("%d,%d,%d,%d\n",(int8_t)(rssi), (int8_t)(med), (int8_t)(kal), (int8_t)(sor)); //rssi and median
-    
-    
-    
-    
-    
-    //Serial.printf("%d,%d\n",(int8_t)(rssi), (int8_t)(med)); //rssi and median
-
-    /*Time keeping function used to prevent multiple gate retriggers */
+        /*Time keeping function used to prevent multiple gate retriggers */
     if (millis() - previoustime >= time_delay) // time delay is 15 sec ideally.
     { 
         previoustime = millis();
         gate_delay = true;
+    }
+
+    /* Do not Remove. These CHANGE things and update global variables. They must only run ONCE per loop. */
+
+    hist_update(); //Updates RSSI_HIST. MUST ONLY RUN ONCE PER LOOP.
+    med = median(); //Calculates Median. Updates MED_HIST. MUST ONLY RUN ONCE PER LOOP.
+    wijkstra_dist = wijkstra(4); // Must only be called ONCE per loop.
+    ref_time = (ref_time + last_discovered/1000); //Ref time since boot. To keep track of samples. Given in ms.
+    /*End */
+
+
+    //These functions are query based, and can be run as many times as you want.
+
+    //sor = SDOR(rssi_hist); // Calculates SDOR using globalvar rssi_hist. Returns single int for RSSI estimate.
+    kal = kalvin(rssi_hist); //Initial guess is the average of past 5 samples.
+    
+
+    //tarentaalNet();
+
+
+    
+    
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time/10);
+
+    if (device_found && !config_ble)
+    {
+        Serial.printf("Samples Lost: %d\n", sample_hist());
+        Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(4, med), est_dist(4, kal), wijkstra_dist, ref_time);
+
+        myOLED.clrScr();
+        myOLED.print("Update Freq:", LEFT, 8);
+        myOLED.printNumI(last_discovered, RIGHT, 8);
+        myOLED.print("Filtered RSSI:", LEFT, 24);
+        myOLED.printNumF(SDOR(med_hist), 3, RIGHT, 24); // 0.123
+        myOLED.print("Wijkstra Dist:", LEFT, 40);
+        myOLED.printNumF(wijkstra_dist, 3, RIGHT, 40);
+        myOLED.print("Location:", LEFT, 56);
+        myOLED.print(loc, RIGHT, 56);
+        myOLED.update();
+    }
+    else
+    {
+        myOLED.clrScr();
+        myOLED.print("Device Not in Range", CENTER, 24);
+        myOLED.update();
+       Serial.printf("%d,%d,%d,%d,%d,%d,%d,%f,\n", 0, 0, 0, 0, 0, 0, 0, ref_time);
     }
 
     /* Proximity Based Config Trigger */
@@ -681,7 +701,7 @@ void loop()
     }
 
     /* Exit BLE Mode, Start Wifi */
-    if ((b_config.numberKeyPresses > 0) && (!config_ble))
+    if ((b_config.numberKeyPresses > 0) && (!config_ble) && (config_mode == 0))
     {
         digitalWrite(LED_BLE, LOW);
         Serial.println("Config Button Pushed, Disable BLE\n");
@@ -690,10 +710,11 @@ void loop()
         wifibool = false;
         delay(25);
         b_config.numberKeyPresses = 0;
+        config_mode = 1;
     }
 
     /* Exit Wifi Mode, Return to BLE */
-    if ((b_config.numberKeyPresses > 0) && (config_ble))
+    if ((b_config.numberKeyPresses > 0) && (config_ble) && (config_mode == 0))
     {
         digitalWrite(LED_BLE, HIGH);
         digitalWrite(LED_WIFI, LOW);
@@ -716,25 +737,13 @@ void loop()
     if (!config_ble) /* Start of BLE Loop */
     {
 
-        /* OLED DISPLAY UPDATE */
-        myOLED.clrScr();
-        myOLED.print("Update Freq:", LEFT, 8);
-        myOLED.printNumI(last_discovered, RIGHT, 8);
-        myOLED.print("Filtered RSSI:", LEFT, 24);
-        myOLED.printNumF(SDOR(med_hist), 3, RIGHT, 24); // 0.123
-        myOLED.print("Wijkstra Dist:", LEFT, 40);
-        myOLED.printNumF(wijkstra_dist, 3, RIGHT, 40);
-        myOLED.print("Location:", LEFT, 56);
-        myOLED.print(loc, RIGHT, 56);
-        myOLED.update();
-
-
-        // ORIGINAL BLEScanResults foundDevices = pBLEScan->start(scanTime, false); // This Takes 1 Second.
-        //Serial.println("StartScan");
-        pBLEScan->start(scanTime, false); // This Takes 1 Second.
        
+        //Serial.println(last_discovered);
+        last_discovered = (millis() - blescantime); // in milliseconds
+        blescantime = millis();
+
+        pBLEScan->start(scanTime, false); // This Takes 1 Second, but i interrupted by stop within the myAdvertisedDeviceCallbacks thing.
         BLEScanResults foundDevices  = pBLEScan->getResults();
-       
         
         //Needed if you want simultaneous wifi to work.
         
@@ -744,79 +753,29 @@ void loop()
 
         for (int k = 0; k < foundDevices.getCount(); k++)
         {
+
+            for (int g = 0; g < (sizeof(knownBLEAddresses) / sizeof(knownBLEAddresses[g])); g++)
+            {
             //Serial.printf("Loop of FoundDevices: %d\n", k);
             BLEAdvertisedDevice device = foundDevices.getDevice(k);
             rssi = device.getRSSI();
-            if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0) // Restricts to only KNOWN mac addresses. 0 when identical.
+            if (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[g].c_str()) == 0) // Restricts to only KNOWN mac addresses. 0 when identical.
             {
                 /*BLE Beacon has been found and is within range. */
-                
-                //Serial.println();
-                //Serial.println(millis() - blescantime); // The time between sucessive updates
-                last_discovered = millis() - blescantime;
-                
-                /*
-                movingavg.pop_back();
-                movingavg.insert((movingavg.begin()), last_discovered);
-                
-                
-                ctr = 0;
-                for (int i=0; i< 5; i++) // Resets moving avg to only use the last 10 values.
-                {
-                ctr += movingavg[i];
-                }
-                Serial.printf("Moving Avg: %d\n", (ctr/5));
-
-                */
-                blescantime = millis();
-
-            ///Serial.printf("Key found, keyrssi: (%d) rssi of Current Threshhold: %d \n", rssi, RSSI_THRESHOLD);
-                //Serial.printf("%d\n", rssi);
-
-                keyrssi = rssi;
-
-                //Serial.printf("RSSIA %d\n", rssi);
-                //Convert RSSI to Distance
-                // Source : https://iotandelectronics.wordpress.com/2016/10/07/how-to-calculate-distance-from-the-rssi-value-of-the-ble-beacon/
-                //temp = -70 - rssi;
-                //temp = temp / 40; // The 40 is arbitrary and must be tuned.
-                //distance = pow(10, temp);
-                //Serial.printf("Algebriac Distance of Key is (Approx) %f m \n", distance);
-
+                keyrssi = rssi; // update RSSI. This is then used to calculated wijkstra_dist.
             }
-            
-            //Serial.printf("Med: %d, Thresh: %d\n", med, RSSI_THRESHOLD);
-            //Serial.printf("Device found: %d", (device_found == true));
-            //Serial.println((strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0));
+          
 
-
-            /* Original RSSI Version
-            if ((kal > RSSI_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
-           // if ((med > RSSI_THRESHOLD))
+           if ((wijkstra_dist < DIST_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[g].c_str()) == 0))
             {
-                prev = 1; // Light was turned on previously in this loop
-                //Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
-            }
-            if ((keyrssi > RSSI_CONFIG) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
-            {
-                configcounter++;
-                Serial.printf("Config Counter: %d\n", configcounter);
-            }
-
-            */
-
-           /* Updated Distance Version */
-
-           if ((wijkstra_dist < DIST_THRESHOLD) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
-            {
-                 // if ((med > RSSI_THRESHOLD))
                  if (gate_delay == true) // This ensures gate is only ARMED when time has run out.
                  {
                     prev = 1;
                  }
-                 // Light was turned on previously in this loop
-                //Serial.printf("Prev has been triggered. %d, %d", rssi, RSSI_THRESHOLD);
             }
+
+
+            /* This enables the device to be put into CONFIG mode by proximity of the beacon. Disabled for now.
 
             if ((wijkstra_dist < DIST_CONFIG) && (device_found == true) && (strcmp(device.getAddress().toString().c_str(), knownBLEAddresses[0].c_str()) == 0))
             {
@@ -824,10 +783,12 @@ void loop()
                 Serial.printf("Config Counter: %d\n", configcounter);
             }
 
+            */
 
-        } // END of for Loop
+            } // END g for loop
+        } // END k for Loop
 
-        //  PREV indicates that one of the devices is our key, is in range, AND has the correct identity.
+        //  PREV == 1 indicates that one of the devices is our key, is in range, AND has the correct identity.
         if (prev == 1)
         {
             //TRIGGER ENABLED.
@@ -898,15 +859,18 @@ void loop()
                 b_down.numberKeyPresses = 0;
             }
 
-            if (b_enter.numberKeyPresses > 0)
+            if ((b_config.numberKeyPresses > 0) && (config_mode==1))
             {
                 linenumber = 1;
-                delay(50);
-                b_enter.numberKeyPresses = 0;
+                delay(500);
+                b_config.numberKeyPresses = 0;
+                config_mode = 2;
+                Serial.printf("Config mode changed from 1 to %d\n", config_mode);
             }
         }
         if (linenumber == 1) //On the second line of OLED Display
         {
+            Serial.printf("Line number == 1\n");
             //Consdier including a flash indicator here.
             if (b_up.numberKeyPresses > 0)
             {
@@ -922,7 +886,7 @@ void loop()
                 b_down.numberKeyPresses = 0;
             }
 
-            if (b_enter.numberKeyPresses > 0)
+            if ((b_config.numberKeyPresses > 0) && (config_mode == 2))
             {
                 linenumber = 0;
                
@@ -939,7 +903,8 @@ void loop()
                 myOLED.update();
                 delay(2000); // To allow user to read message
                 
-                b_enter.numberKeyPresses = 0;
+                config_mode = 0;
+                //b_config.numberKeyPresses = 0;
             }
         }
     }
@@ -989,8 +954,8 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     digitalWrite(LED_BLE, LOW);
     digitalWrite(LED_WIFI, HIGH);
 
-    //wifi_station(); //Be the Router
-    wifi_client(); //Connect to the Router
+    wifi_station(); //Be the Router
+    //wifi_client(); //Connect to the Router
 
     myOLED.clrScr();
     //myOLED.print("Wifi Innit.", LEFT, 8);
