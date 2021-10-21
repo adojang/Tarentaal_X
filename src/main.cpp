@@ -82,17 +82,20 @@ IPAddress subnet(255, 255, 255, 0);
 WebServer server(80);
 
 /* Enter Known BLE Device Mac Addresses */
-//Owlet1 - db:17:35:a3:4c:27
-// Peep - dc:0d:69:a7:f7:9a
+//Owlet1 - Circle - db:17:35:a3:4c:27
+// Peep - Triangle - dc:0d:69:a7:f7:9a
 
-//String knownBLEAddresses[] = {"dc:0d:69:a7:f7:9a"};
-String knownBLEAddresses[] = {"db:17:35:a3:4c:27", "dc:0d:69:a7:f7:9a"};
+String knownBLEAddresses[] = {"db:17:35:a3:4c:27"};
+//String knownBLEAddresses[] = {"db:17:35:a3:4c:27", "dc:0d:69:a7:f7:9a"};
 
 /* Constants */
 //int RSSI_THRESHOLD = -90;     // Is overwritten by CUSTOM_IN and CUSTOM_OUT dynamically
 //int RSSI_CONFIG = -10;        // For starting the Webserver - IMPOSSIBLE for now.
 //uint8_t RSSI_CUSTOM_IN = 88;  //RSSI trigger from IN going OUT The EEPROM value will overwrite this.
 //uint8_t RSSI_CUSTOM_OUT = 88; //RSSI trigger from OUT coming IN The EEPROM value will overwrite this.
+
+
+
 
 float DIST_THRESHOLD = 1.5;  // Now overwritten by EEPROM memory
 float DIST_CUSTOM_IN = 1.25; // Overwritten by EEPROM memory
@@ -104,6 +107,7 @@ bool device_found = false;
 bool wifibool = false;
 bool config_ble = false;
 bool gate_delay = false; // Set as true so we don't need to wait for timedelay on first boot. Gate is primed after restart.
+bool calibrate_flag = true;
 
 /* More Constants */
 // uint8_t s_trigger = 26;
@@ -120,12 +124,31 @@ uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually trigg
 
 // Window shall be LE to interval
 
+
+
+
+
+
+//OPERATIONAL MODE
+// 0 - Exclusive.    1 - Coexistance.    2 - PAE
+int operation_mode = 0; 
+
+//For Coexistance set interval 175 and window 70
+
 uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-uint16_t interval = 500; //the intervals at which scanning is actively taking place in milliseconds
-uint16_t window = 100;   //the window of time after each interval which is being scanned in milliseconds
+int16_t interval = 200; //the intervals at which scanning is actively taking place in milliseconds 200
+uint16_t window = 199;   //the window of time after each interval which is being scanned in milliseconds 199
+float overhead = 0;
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
+
+ bool onceoff = false;
+
+
+
+
+
 
 //double distance = 0;
 float wijkstra_dist = 222;
@@ -310,11 +333,23 @@ void setup()
     pBLEScan = BLEDevice::getScan();                                           //create new scan
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //Init Callback Function
     pBLEScan->setActiveScan(true);                                             //active scan uses more power, but get results faster
-    pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
+    pBLEScan->setInterval((uint16_t)interval);                                           // set Scan interval // TRY 128
     pBLEScan->setWindow(window);                                               // less or equal setInterval value // TRY 16
     Serial.println("Finish Initialize");
     //Enable this for coexistance mode.
-    wifi_init();
+    if (operation_mode == 1)
+    {
+         interval = 500; //the intervals at which scanning is actively taking place in milliseconds
+         window = 100;   //the window of time after each interval which is being scanned in milliseconds
+        wifi_init();
+    }
+
+    if (operation_mode == 2)
+    {
+        wifi_init();
+    }
+    
+     
 }
 
 int meanx(std::vector<int> data) // Calculates mean of rssi data
@@ -613,6 +648,44 @@ void tarentaalNet() // Check if the gate has been opened from the online trigger
     }
 }
 
+void calibrate()
+{
+    interval = 200; //the intervals at which scanning is actively taking place in milliseconds 200
+    window = 199;
+    pBLEScan->setInterval(interval);                                           // set Scan interval // TRY 128
+    pBLEScan->setWindow((uint16_t)window);  
+    float rec_time = millis();
+    pBLEScan->start(scanTime, false); // This Takes 1 Second, but i interrupted by stop within the myAdvertisedDeviceCallbacks thing.
+    float timetaken = millis() - rec_time; // 3g, 30ms
+    Serial.printf("Time taken to scan %f\n", timetaken);
+  
+    pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
+
+    //Assume now perfectly synchronized.
+    window = 70;   
+    interval = 200 - (window/2); //the intervals at which scanning is actively taking place in milliseconds. STARTS at 175. HMMMM
+    pBLEScan->setInterval((uint16_t)interval);                                           
+    pBLEScan->setWindow(window);
+
+     // global variable which is used later.
+    
+    /*
+    rec_time = millis();
+    pBLEScan->start(scanTime, false);
+    timetaken = millis() - rec_time;
+    Serial.printf("Time taken to scan #2: %f\n", timetaken); // This proves if my method works
+     rec_time = millis();
+    pBLEScan->start(scanTime, false);
+    overhead = millis();
+    timetaken = millis() - rec_time;
+    Serial.printf("Time taken to scan #3: %f\n", timetaken); // This proves if my method works
+    */
+    calibrate_flag = false;
+    onceoff = true; // used to measure overhead
+
+    //Need to time the time from when this loop ends til when the scan is actually called. That's more likely to be my 'overhead'
+}
+
 void loop()
 {
     if (millis() - previoustime >= time_delay) // time delay is 15 sec ideally.
@@ -639,28 +712,46 @@ void loop()
     //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
     //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time/10);
     //Serial.printf("Samples Lost: %d\n", sample_lost());
-    if (device_found && !config_ble)
+    
+    
+    if (!config_ble)
     {
-        
-        Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(4, med), est_dist(4, kal), wijkstra_dist, ref_time, sample_lost(), state);
+        if (device_found) // Device is Within Range - IN BOUNDS
+        {
+            
+            
+            //if (calibrate_flag && operation_mode == 2) calibrate();
+            //if (!calibrate_flag && operation_mode == 2)
+            {
+               Serial.println();
+            } 
+         
+            
+           
+            //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(4, med), est_dist(4, kal), wijkstra_dist, ref_time, sample_lost(), state);
 
-        myOLED.clrScr();
-        myOLED.print("Update Freq:", LEFT, 8);
-        myOLED.printNumI(last_discovered, RIGHT, 8);
-        myOLED.print("Filtered RSSI:", LEFT, 24);
-        myOLED.printNumF(SDOR(med_hist), 3, RIGHT, 24); // 0.123
-        myOLED.print("Wijkstra Dist:", LEFT, 40);
-        myOLED.printNumF(wijkstra_dist, 3, RIGHT, 40);
-        myOLED.print("Location:", LEFT, 56);
-        myOLED.print(loc, RIGHT, 56);
-        myOLED.update();
-    }
-    else
-    {
-        myOLED.clrScr();
-        myOLED.print("Device Not in Range", CENTER, 24);
-        myOLED.update();
-        Serial.printf("%d,%d,%d,%d,%d,%d,%d,%d,\n", 0, 0, 0, 0, 0, 0, 0, 0);
+            myOLED.clrScr();
+            myOLED.print("Update Freq:", LEFT, 8);
+            myOLED.printNumI(last_discovered, RIGHT, 8);
+            myOLED.print("Filtered RSSI:", LEFT, 24);
+            myOLED.printNumF(SDOR(med_hist), 3, RIGHT, 24); // 0.123
+            myOLED.print("Wijkstra Dist:", LEFT, 40);
+            myOLED.printNumF(wijkstra_dist, 3, RIGHT, 40);
+            myOLED.print("Location:", LEFT, 56);
+            myOLED.print(loc, RIGHT, 56);
+            myOLED.update();
+        }
+        else                        // Device is NOT within range - OUT OF BOUNDS
+        {
+            myOLED.clrScr();
+            myOLED.print("Update Freq:", LEFT, 8);
+            myOLED.printNumI(last_discovered, RIGHT, 8);
+            myOLED.print("Device Not in Range", CENTER, 24);
+            myOLED.update();
+            Serial.printf("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,\n", 0, 0, 0, 0, 0, 0, 0, 0,0,0);
+            last_discovered = 0;
+            calibrate_flag = true;
+        }
     }
 
     /* Proximity Based Config Trigger */
@@ -709,18 +800,42 @@ void loop()
 
     if (!config_ble) /* Start of BLE Loop */
     {
-
+        
         //Serial.println(last_discovered);
         last_discovered = (millis() - blescantime); // in milliseconds
         blescantime = millis();
+        if (calibrate_flag && operation_mode == 2) calibrate();
+        if (!calibrate_flag && operation_mode == 2)
+        {
+            if( onceoff == true)
+            { 
+            //overhead = millis() - overhead; //This is the time that it takes between calibration and normal scanning. +3 is the loop time obtained via expereminations.
+            overhead = 0;
+            Serial.printf("The ONCE OFF OVERHEAD IS: %f\n\n\n", overhead);
+            onceoff = false; // used to stop overhead from updating until calibrate is called again.
+            }
+
+        //Assume overhead has already been set and is 3.
+        interval = interval - overhead;
+        if (interval < 0) interval = 100 + interval; // Thus, -30 becomes 170. This means that I MAY lose a sample though. Assume interval is 205ms since beacon not constant.
+        pBLEScan->setInterval((uint16_t)interval);
+      
+        Serial.printf("%d,%f,%f,\n", interval, last_discovered,overhead);
+        }
+        Serial.printf("%f,\n", last_discovered);
+
+
 
         pBLEScan->start(scanTime, false); // This Takes 1 Second, but i interrupted by stop within the myAdvertisedDeviceCallbacks thing.
+
+        int biglooptime = millis();
         BLEScanResults foundDevices = pBLEScan->getResults();
 
         //Needed if you want simultaneous wifi to work.
 
-        server.handleClient();
-        
+        if (operation_mode == 1) server.handleClient();
+        if (operation_mode == 2) server.handleClient();
+   
        
 
         for (int k = 0; k < foundDevices.getCount(); k++)
@@ -793,6 +908,8 @@ void loop()
             }
         }
         pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
+        //Serial.printf("Main Loop Overhead: %d\n\n", (millis() - biglooptime));
+        overhead = millis() - biglooptime; // Proactively update the overhead as loop progresses.
     }
     else /* Start of Wifi Server*/
     {
@@ -875,6 +992,7 @@ void loop()
             }
         }
     }
+    
 
 } // end of main loop
 
