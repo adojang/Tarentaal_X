@@ -131,20 +131,24 @@ uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually trigg
 
 //OPERATIONAL MODE
 // 0 - Exclusive.    1 - Coexistance.    2 - PAE
-int operation_mode = 0; 
+int operation_mode = 2; 
 
 //For Coexistance set interval 175 and window 70
 
 uint32_t scanTime = 1;   //Duration of each scan in seconds 2 1100 1099
-int16_t interval = 200; //the intervals at which scanning is actively taking place in milliseconds 200
-uint16_t window = 199;   //the window of time after each interval which is being scanned in milliseconds 199
+int16_t interval = 220; //the intervals at which scanning is actively taking place in milliseconds 200
+int16_t init_interval = -1;
+uint16_t window = 220;   //the window of time after each interval which is being scanned in milliseconds 199
+
+// Make slightly longer for the operation mode 0
+
 float overhead = 0;
 //500 here is the best compromise. lower for better wifi, higher for better ble.
 //Lower scantiems are better for lower latencies, but higher scantimes are better for consistency. If the beacon is far away, a higher scantime is preferred.
 uint16_t configcounter = 0;
 
  bool onceoff = false;
-
+int gcount = 0;
 
 
 
@@ -265,6 +269,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks
                 //    Serial.println(knownBLEAddresses[i].c_str());
                 device_found = true; //flag that is set that indicates I am within BLE range
                 donotchangedevice = true;
+                gcount++;
             }
             else
             {
@@ -662,8 +667,9 @@ void calibrate()
     pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
 
     //Assume now perfectly synchronized.
-    window = 70;   
-    interval = 200 - (window/2); //the intervals at which scanning is actively taking place in milliseconds. STARTS at 175. HMMMM
+    window = timetaken;   
+    interval = timetaken - (window/2); //the intervals at which scanning is actively taking place in milliseconds. STARTS at 175. HMMMM
+    init_interval = interval;
     pBLEScan->setInterval((uint16_t)interval);                                           
     pBLEScan->setWindow(window);
 
@@ -682,7 +688,7 @@ void calibrate()
     */
     calibrate_flag = false;
     onceoff = true; // used to measure overhead
-
+    
     //Need to time the time from when this loop ends til when the scan is actually called. That's more likely to be my 'overhead'
 }
 
@@ -817,12 +823,13 @@ void loop()
 
         //Assume overhead has already been set and is 3.
         interval = interval - overhead;
-        if (interval < 0) interval = 100 + interval; // Thus, -30 becomes 170. This means that I MAY lose a sample though. Assume interval is 205ms since beacon not constant.
+        if (interval < 0) interval = init_interval + interval;
+        if (interval == 0) interval = init_interval; // Thus, -30 becomes 170. This means that I MAY lose a sample though. Assume interval is 205ms since beacon not constant.
         pBLEScan->setInterval((uint16_t)interval);
       
-        Serial.printf("%d,%f,%f,\n", interval, last_discovered,overhead);
+        Serial.printf("%d,%f,%f,%d\n", interval, last_discovered,overhead,gcount);
         }
-        Serial.printf("%f,\n", last_discovered);
+        //Serial.printf("%f,\n", last_discovered);
 
 
 
@@ -1037,8 +1044,8 @@ void wifi_init() /* Wifi Intialization - Runs Once. */
     digitalWrite(LED_BLE, LOW);
     digitalWrite(LED_WIFI, HIGH);
 
-    wifi_station(); //Be the Router
-    //wifi_client(); //Connect to the Router
+    //wifi_station(); //Be the Router
+    wifi_client(); //Connect to the Router
 
     myOLED.clrScr();
     //myOLED.print("Wifi Innit.", LEFT, 8);
