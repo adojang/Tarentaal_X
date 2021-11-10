@@ -131,7 +131,7 @@ uint8_t LED_BUILTIN = 2; // Just for extra visual cues that it IS actually trigg
 
 //OPERATIONAL MODE
 // 0 - Exclusive.    1 - Coexistance.    2 - PAE
-int operation_mode = 2; 
+int operation_mode = 0; 
 
 //For Coexistance set interval 175 and window 70
 
@@ -159,7 +159,7 @@ float wijkstra_dist = 222;
 
 unsigned long previoustime = 0;
 
-uint32_t time_delay = 40000; // Ideally 15 sec, in ms. 20000
+uint32_t time_delay = 4000000; // Ideally 15 sec, in ms. 40000
 
 //unsigned long time_since_last_sample;
 float ref_time = 0; // in seconds.
@@ -704,7 +704,8 @@ void loop()
 
     hist_update();                                  //Updates RSSI_HIST. MUST ONLY RUN ONCE PER LOOP.
     med = median();                                 //Calculates Median. Updates MED_HIST. MUST ONLY RUN ONCE PER LOOP.
-    wijkstra_dist = wijkstra(4);                    // Must only be called ONCE per loop.
+    wijkstra_dist = wijkstra(2);
+    //wijkstra_dist = wijkstra(4);                    // Must only be called ONCE per loop.
     ref_time = (ref_time + last_discovered / 1000); //Ref time since boot. To keep track of samples. Given in ms.
     /*End */
 
@@ -715,8 +716,8 @@ void loop()
 
     //tarentaalNet();
 
-    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(1, keyrssi), est_dist(1, med), est_dist(1, kal), wijkstra_dist, ref_time / 10);
-    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time/10);
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n", (keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, keyrssi), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time / 10);
+    //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(4, keyrssi), est_dist(4, med), est_dist(4, kal), wijkstra_dist, ref_time/10);
     //Serial.printf("Samples Lost: %d\n", sample_lost());
     
     
@@ -724,13 +725,17 @@ void loop()
     {
         if (device_found) // Device is Within Range - IN BOUNDS
         {
-            
+            Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(2, med), est_dist(2, kal), wijkstra_dist, ref_time);
+            //Remember to change Wijkstra ABOVE.
+            //Remember to Renable Triggering.
+            //Serial.printf("%d,%d,%d,%d,%f,%f,%f,%f,\n",(keyrssi), (med), (kal), SDOR(med_hist), est_dist(4, med), est_dist(4, kal), wijkstra_dist, ref_time);
+    
             
             //if (calibrate_flag && operation_mode == 2) calibrate();
             //if (!calibrate_flag && operation_mode == 2)
-            {
-               Serial.println();
-            } 
+            //{
+            //   Serial.println();
+            //} 
          
             
            
